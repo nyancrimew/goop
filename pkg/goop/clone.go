@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/tls"
 	"fmt"
+	"github.com/deletescape/goop/internal/stopandgo"
 	"github.com/deletescape/goop/internal/utils"
 	"github.com/go-git/go-billy/v5/osfs"
 	"github.com/go-git/go-git/v5/plumbing"
@@ -20,17 +21,18 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
-	"sync"
+	"time"
 )
 
-// TODO: implement limiter
-const maxConcurrency = 500
+const maxConcurrency = 40
 
 var c = &fasthttp.Client{
-	MaxConnsPerHost: maxConcurrency + 250,
+	MaxConnsPerHost: utils.MaxInt(maxConcurrency + 250, fasthttp.DefaultMaxConnsPerHost),
 	TLSConfig: &tls.Config{
 		InsecureSkipVerify: true,
 	},
+	NoDefaultUserAgentHeader: true,
+	MaxConnWaitTimeout: 10 * time.Second,
 }
 
 var refPrefix = []byte{'r', 'e', 'f', ':'}
@@ -98,6 +100,8 @@ var (
 	}
 )
 
+var sag = stopandgo.NewStopAndGo(maxConcurrency)
+
 func Clone(u, dir string, force bool) error {
 	baseUrl := strings.TrimSuffix(u, "/")
 	baseUrl = strings.TrimSuffix(baseUrl, "/HEAD")
@@ -146,7 +150,7 @@ func Clone(u, dir string, force bool) error {
 	return FetchGit(baseUrl, baseDir)
 }
 
-func DownloadRecursively(u, dir string, files []string, wg *sync.WaitGroup) {
+func DownloadRecursively(u, dir string, files []string) {
 	os.MkdirAll(dir, os.ModePerm)
 	for _, f := range files {
 		f := f
@@ -158,9 +162,9 @@ func DownloadRecursively(u, dir string, files []string, wg *sync.WaitGroup) {
 			return
 		}
 		if strings.HasSuffix(f, "/") {
-			wg.Add(1)
+			sag.Add()
 			go func() {
-				defer wg.Done()
+				defer sag.Done()
 				if !utils.IsHtml(body) {
 					fmt.Printf("warning: %s doesn't appear to be an index", uri)
 					return
@@ -170,12 +174,12 @@ func DownloadRecursively(u, dir string, files []string, wg *sync.WaitGroup) {
 					fmt.Fprintf(os.Stderr, "error: %s\n", err)
 					return
 				}
-				DownloadRecursively(uri, utils.Url(dir, f), indexedFiles, wg)
+				DownloadRecursively(uri, utils.Url(dir, f), indexedFiles)
 			}()
 		} else {
-			wg.Add(1)
+			sag.Add()
 			go func() {
-				defer wg.Done()
+				defer sag.Done()
 				if utils.IsHtml(body) {
 					fmt.Printf("warning: %s doesn't appear to be a git file", uri)
 					return
@@ -192,10 +196,10 @@ func DownloadRecursively(u, dir string, files []string, wg *sync.WaitGroup) {
 	}
 }
 
-func FindRefs(baseUrl, baseDir, path string, wg *sync.WaitGroup) {
-	wg.Add(1)
+func FindRefs(baseUrl, baseDir, path string) {
+	sag.Add()
 	go func() {
-		defer wg.Done()
+		defer sag.Done()
 		uri := utils.Url(baseUrl, path)
 		code, body, err := c.Get(nil, uri)
 		fmt.Printf("[-] Fetching %s [%d]\n", uri, code)
@@ -218,16 +222,16 @@ func FindRefs(baseUrl, baseDir, path string, wg *sync.WaitGroup) {
 			}
 
 			for _, ref := range refRegex.FindAll(body, -1) {
-				FindRefs(baseUrl, baseDir, string(ref), wg)
+				FindRefs(baseUrl, baseDir, string(ref))
 			}
 		}
 	}()
 }
 
-func Download(baseUrl, baseDir, file string, wg *sync.WaitGroup) {
-	wg.Add(1)
+func Download(baseUrl, baseDir, file string) {
+	sag.Add()
 	go func() {
-		defer wg.Done()
+		defer sag.Done()
 		uri := utils.Url(baseUrl, file)
 		code, body, err := c.Get(nil, uri)
 		fmt.Printf("[-] Fetching %s [%d]\n", uri, code)
@@ -272,10 +276,10 @@ func GetReferencedHashes(obj object.Object) []string {
 }
 
 // TODO: more dedupe stuff
-func FindObjects(obj, baseUrl, baseDir string, storage *filesystem.ObjectStorage, wg *sync.WaitGroup) {
-	wg.Add(1)
+func FindObjects(obj, baseUrl, baseDir string, storage *filesystem.ObjectStorage) {
+	sag.Add()
 	go func() {
-		defer wg.Done()
+		defer sag.Done()
 		file := fmt.Sprintf(".git/objects/%s/%s", obj[:2], obj[2:])
 		uri := utils.Url(baseUrl, file)
 		code, body, err := c.Get(nil, uri)
@@ -311,7 +315,7 @@ func FindObjects(obj, baseUrl, baseDir string, storage *filesystem.ObjectStorage
 			}
 			referencedHashes := GetReferencedHashes(decObj)
 			for _, h := range referencedHashes {
-				FindObjects(h, baseUrl, baseDir, storage, wg)
+				FindObjects(h, baseUrl, baseDir, storage)
 			}
 		}
 	}()
@@ -345,9 +349,8 @@ func FetchGit(baseUrl, baseDir string) error {
 		}
 		if utils.StringsContain(indexedFiles, "HEAD") {
 			fmt.Println("[-] Fetching .git recursively")
-			wg := sync.WaitGroup{}
-			DownloadRecursively(utils.Url(baseUrl, ".git/"), utils.Url(baseDir, ".git/"), indexedFiles, &wg)
-			wg.Wait()
+			DownloadRecursively(utils.Url(baseUrl, ".git/"), utils.Url(baseDir, ".git/"), indexedFiles)
+			sag.Wait()
 			fmt.Println("[-] Running git checkout .")
 			cmd := exec.Command("git", "checkout", ".")
 			cmd.Dir = baseDir
@@ -356,18 +359,16 @@ func FetchGit(baseUrl, baseDir string) error {
 	}
 
 	fmt.Println("[-] Fetching common files")
-	wg := sync.WaitGroup{}
 	for _, f := range commonFiles {
-		Download(baseUrl, baseDir, f, &wg)
+		Download(baseUrl, baseDir, f)
 	}
-	wg.Wait()
+	sag.Wait()
 
 	fmt.Println("[-] Finding refs")
-	wg = sync.WaitGroup{}
 	for _, ref := range commonRefs {
-		FindRefs(baseUrl, baseDir, ref, &wg)
+		FindRefs(baseUrl, baseDir, ref)
 	}
-	wg.Wait()
+	sag.Wait()
 
 	fmt.Println("[-] Finding packs")
 	infoPacksPath := utils.Url(baseDir, ".git/objects/info/packs")
@@ -377,12 +378,11 @@ func FetchGit(baseUrl, baseDir string) error {
 		if err != nil {
 			return err
 		}
-		wg = sync.WaitGroup{}
 		for _, sha1 := range packRegex.FindAll(infoPacks, -1) {
-			Download(baseUrl, baseDir, fmt.Sprintf("./git/objects/pack/pack-%s.idx", sha1), &wg)
-			Download(baseUrl, baseDir, fmt.Sprintf("./git/objects/pack/pack-%s.pack", sha1), &wg)
+			Download(baseUrl, baseDir, fmt.Sprintf("./git/objects/pack/pack-%s.idx", sha1))
+			Download(baseUrl, baseDir, fmt.Sprintf("./git/objects/pack/pack-%s.pack", sha1))
 		}
-		wg.Wait()
+		sag.Wait()
 	}
 
 	fmt.Println("[-] Finding objects")
@@ -420,7 +420,6 @@ func FetchGit(baseUrl, baseDir string) error {
 	}
 
 	for _, f := range files {
-		fmt.Println(f)
 		if !utils.Exists(f) {
 			continue
 		}
@@ -478,11 +477,10 @@ func FetchGit(baseUrl, baseDir string) error {
 	}*/
 
 	fmt.Println("[-] Fetching objects")
-	wg = sync.WaitGroup{}
 	for obj := range objs {
-		FindObjects(obj, baseUrl, baseDir, storage, &wg)
+		FindObjects(obj, baseUrl, baseDir, storage)
 	}
-	wg.Wait()
+	sag.Wait()
 
 	fmt.Println("[-] Running git checkout .")
 	cmd := exec.Command("git", "checkout", ".")

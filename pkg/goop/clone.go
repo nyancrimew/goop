@@ -27,7 +27,7 @@ import (
 const maxConcurrency = 40
 
 var c = &fasthttp.Client{
-	MaxConnsPerHost: utils.MaxInt(maxConcurrency + 250, fasthttp.DefaultMaxConnsPerHost),
+	MaxConnsPerHost: 5000,//utils.MaxInt(maxConcurrency + 250, fasthttp.DefaultMaxConnsPerHost),
 	TLSConfig: &tls.Config{
 		InsecureSkipVerify: true,
 	},

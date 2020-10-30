@@ -24,10 +24,10 @@ import (
 	"time"
 )
 
-const maxConcurrency = 40
+const maxConcurrency = 250
 
 var c = &fasthttp.Client{
-	MaxConnsPerHost: 5000,//utils.MaxInt(maxConcurrency + 250, fasthttp.DefaultMaxConnsPerHost),
+	MaxConnsPerHost: utils.MaxInt(maxConcurrency + 250, fasthttp.DefaultMaxConnsPerHost),
 	TLSConfig: &tls.Config{
 		InsecureSkipVerify: true,
 	},

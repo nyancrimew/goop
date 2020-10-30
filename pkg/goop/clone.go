@@ -24,7 +24,7 @@ import (
 	"time"
 )
 
-const maxConcurrency = 250
+const maxConcurrency = 50
 
 var c = &fasthttp.Client{
 	MaxConnsPerHost: utils.MaxInt(maxConcurrency + 250, fasthttp.DefaultMaxConnsPerHost),

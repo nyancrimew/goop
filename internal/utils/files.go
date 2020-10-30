@@ -3,6 +3,7 @@ package utils
 import (
 	"io"
 	"os"
+	"path"
 )
 
 func IsFolder(name string) bool {
@@ -14,8 +15,14 @@ func IsFolder(name string) bool {
 }
 
 func Exists(name string) bool {
-	_, err := os.Stat(name)
-	return os.IsExist(err)
+	i, err := os.Stat(name)
+	if err == nil {
+		return true
+	}
+	if os.IsNotExist(err){
+		return false
+	}
+	return i.IsDir()
 }
 
 func IsEmpty(dir string) (bool, error) {
@@ -30,4 +37,12 @@ func IsEmpty(dir string) (bool, error) {
 		return true, nil
 	}
 	return false, err // Either not empty or error, suits both cases
+}
+
+func CreateParentFolders(file string) error {
+	dir := path.Dir(file)
+	if !Exists(dir) {
+		return os.MkdirAll(dir, os.ModePerm)
+	}
+	return nil
 }

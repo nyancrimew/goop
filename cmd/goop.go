@@ -7,6 +7,7 @@ import (
 	"os"
 )
 
+var force bool
 var rootCmd = &cobra.Command{
 	Use: "goop",
 	Short: "goop is a very fast tool to grab sources from exposed .git folders",
@@ -16,11 +17,15 @@ var rootCmd = &cobra.Command{
 		if len(args) >= 2 {
 			dir = args[1]
 		}
-		if err := goop.Clone(args[0], dir); err != nil {
+		if err := goop.Clone(args[0], dir, force); err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
 		}
 	},
+}
+
+func init() {
+	rootCmd.PersistentFlags().BoolVarP(&force, "force", "f",false, "overrides DIR if it already exists")
 }
 
 func Execute() {

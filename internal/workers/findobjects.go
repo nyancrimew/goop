@@ -13,7 +13,9 @@ import (
 	"time"
 )
 
-// TODO: more dedupe stuff
+var checkedObjs = make(map[string]bool)
+var checkedObjsMutex sync.Mutex
+
 func FindObjectsWorker(c *fasthttp.Client, jobs chan string, baseUrl, baseDir string, wg *sync.WaitGroup, storage *filesystem.ObjectStorage) {
 	wg.Add(1)
 	defer wg.Done()
@@ -21,6 +23,15 @@ func FindObjectsWorker(c *fasthttp.Client, jobs chan string, baseUrl, baseDir st
 	for {
 		select {
 		case obj := <-jobs:
+			checkedObjsMutex.Lock()
+			if checked, ok := checkedObjs[obj]; checked && ok {
+				// Obj has already been checked
+				checkedObjsMutex.Unlock()
+				continue
+			} else {
+				checkedObjs[obj] = true
+			}
+			checkedObjsMutex.Unlock()
 			file := fmt.Sprintf(".git/objects/%s/%s", obj[:2], obj[2:])
 			uri := utils.Url(baseUrl, file)
 			code, body, err := c.Get(nil, uri)

@@ -13,13 +13,17 @@ import (
 
 var refRegex = regexp.MustCompile(`(?m)(refs(/[a-zA-Z0-9\-\.\_\*]+)+)`)
 
-func FindRefWorker(c *fasthttp.Client, jobs chan string, baseUrl, baseDir string, wg *sync.WaitGroup) {
+func FindRefWorker(c *fasthttp.Client, queue chan string, baseUrl, baseDir string, wg *sync.WaitGroup) {
 	wg.Add(1)
 	defer wg.Done()
 	var ctr int
 	for {
 		select {
-		case path := <-jobs:
+		case path := <-queue:
+			if path == "" {
+				continue
+			}
+			ctr = 0
 			uri := utils.Url(baseUrl, path)
 			code, body, err := c.Get(nil, uri)
 			fmt.Printf("[-] Fetching %s [%d]\n", uri, code)
@@ -42,7 +46,7 @@ func FindRefWorker(c *fasthttp.Client, jobs chan string, baseUrl, baseDir string
 				}
 
 				for _, ref := range refRegex.FindAll(body, -1) {
-					jobs <- utils.Url(".git", string(ref))
+					queue <- utils.Url(".git", string(ref))
 				}
 			}
 		default:

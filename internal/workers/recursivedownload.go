@@ -11,13 +11,17 @@ import (
 	"time"
 )
 
-func RecursiveDownloadWorker(c *fasthttp.Client, jobs chan string, baseUrl, baseDir string, wg *sync.WaitGroup) {
+func RecursiveDownloadWorker(c *fasthttp.Client, queue chan string, baseUrl, baseDir string, wg *sync.WaitGroup) {
 	wg.Add(1)
 	defer wg.Done()
 	var ctr int
 	for {
 		select {
-		case f := <-jobs:
+		case f := <-queue:
+			if f == "" {
+				continue
+			}
+			ctr = 0
 			uri := utils.Url(baseUrl, f)
 			code, body, err := c.Get(nil, uri)
 			fmt.Printf("[-] Fetching %s [%d]\n", uri, code)
@@ -36,7 +40,7 @@ func RecursiveDownloadWorker(c *fasthttp.Client, jobs chan string, baseUrl, base
 					continue
 				}
 				for _, idxf := range indexedFiles {
-					jobs <- utils.Url(f, idxf)
+					queue <- utils.Url(f, idxf)
 				}
 			} else {
 				if utils.IsHtml(body) {

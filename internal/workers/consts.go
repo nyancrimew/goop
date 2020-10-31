@@ -3,6 +3,6 @@ package workers
 import "time"
 
 const (
-	gracePeriod = 300 * time.Millisecond
-	graceTimes  = 12
+	gracePeriod = 350 * time.Millisecond
+	graceTimes  = 15
 )

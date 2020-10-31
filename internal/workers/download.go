@@ -9,10 +9,13 @@ import (
 	"sync"
 )
 
-func DownloadWorker(c *fasthttp.Client, jobs <-chan string, baseUrl, baseDir string, wg *sync.WaitGroup) {
+func DownloadWorker(c *fasthttp.Client, queue <-chan string, baseUrl, baseDir string, wg *sync.WaitGroup) {
 	wg.Add(1)
 	defer wg.Done()
-	for file := range jobs {
+	for file := range queue {
+		if file == "" {
+			continue
+		}
 		uri := utils.Url(baseUrl, file)
 		code, body, err := c.Get(nil, uri)
 		fmt.Printf("[-] Fetching %s [%d]\n", uri, code)

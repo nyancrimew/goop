@@ -16,13 +16,17 @@ import (
 var checkedObjs = make(map[string]bool)
 var checkedObjsMutex sync.Mutex
 
-func FindObjectsWorker(c *fasthttp.Client, jobs chan string, baseUrl, baseDir string, wg *sync.WaitGroup, storage *filesystem.ObjectStorage) {
+func FindObjectsWorker(c *fasthttp.Client, queue chan string, baseUrl, baseDir string, wg *sync.WaitGroup, storage *filesystem.ObjectStorage) {
 	wg.Add(1)
 	defer wg.Done()
 	var ctr int
 	for {
 		select {
-		case obj := <-jobs:
+		case obj := <-queue:
+			if obj == "" {
+				continue
+			}
+			ctr = 0
 			checkedObjsMutex.Lock()
 			if checked, ok := checkedObjs[obj]; checked && ok {
 				// Obj has already been checked
@@ -67,7 +71,7 @@ func FindObjectsWorker(c *fasthttp.Client, jobs chan string, baseUrl, baseDir st
 				}
 				referencedHashes := utils.GetReferencedHashes(decObj)
 				for _, h := range referencedHashes {
-					jobs <- h
+					queue <- h
 				}
 			}
 		default:

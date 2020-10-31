@@ -33,6 +33,18 @@ var c = &fasthttp.Client{
 	MaxConnWaitTimeout:       10 * time.Second,
 }
 
+var wg sync.WaitGroup
+
+func createQueue(scale int) chan string {
+	wg = sync.WaitGroup{}
+	return make(chan string, maxConcurrency * scale)
+}
+
+func waitForQueue(queue chan string) {
+	wg.Wait()
+	close(queue)
+}
+
 func Clone(u, dir string, force bool) error {
 	baseUrl := strings.TrimSuffix(u, "/")
 	baseUrl = strings.TrimSuffix(baseUrl, "/HEAD")
@@ -109,17 +121,15 @@ func FetchGit(baseUrl, baseDir string) error {
 		}
 		if utils.StringsContain(indexedFiles, "HEAD") {
 			fmt.Println("[-] Fetching .git recursively")
-			jobs := make(chan string)
-			wg := sync.WaitGroup{}
+			queue := createQueue(100)
 			for w := 1; w <= maxConcurrency; w++ {
-				go workers.RecursiveDownloadWorker(c, jobs, baseUrl, baseDir, &wg)
+				go workers.RecursiveDownloadWorker(c, queue, baseUrl, baseDir, &wg)
 			}
 			for _, f := range indexedFiles {
 				// TODO: add support for non top level git repos
-				jobs <- utils.Url(".git", f)
+				queue <- utils.Url(".git", f)
 			}
-			wg.Wait()
-			close(jobs)
+			waitForQueue(queue)
 			fmt.Println("[-] Running git checkout .")
 			cmd := exec.Command("git", "checkout", ".")
 			cmd.Dir = baseDir
@@ -128,28 +138,25 @@ func FetchGit(baseUrl, baseDir string) error {
 	}
 
 	fmt.Println("[-] Fetching common files")
-	jobs := make(chan string)
-	wg := sync.WaitGroup{}
+	queue := createQueue(len(commonFiles))
 	for w := 1; w <= utils.MinInt(maxConcurrency, len(commonFiles)); w++ {
-		go workers.DownloadWorker(c, jobs, baseUrl, baseDir, &wg)
+		go workers.DownloadWorker(c, queue, baseUrl, baseDir, &wg)
 	}
 	for _, f := range commonFiles {
-		jobs <- f
+		queue <- f
 	}
-	close(jobs)
+	close(queue)
 	wg.Wait()
 
 	fmt.Println("[-] Finding refs")
-	jobs = make(chan string)
-	wg = sync.WaitGroup{}
+	queue = createQueue(100)
 	for w := 1; w <= maxConcurrency; w++ {
-		go workers.FindRefWorker(c, jobs, baseUrl, baseDir, &wg)
+		go workers.FindRefWorker(c, queue, baseUrl, baseDir, &wg)
 	}
 	for _, ref := range commonRefs {
-		jobs <- ref
+		queue <- ref
 	}
-	wg.Wait()
-	close(jobs)
+	waitForQueue(queue)
 
 	fmt.Println("[-] Finding packs")
 	infoPacksPath := utils.Url(baseDir, ".git/objects/info/packs")
@@ -159,16 +166,15 @@ func FetchGit(baseUrl, baseDir string) error {
 			return err
 		}
 		hashes := packRegex.FindAllSubmatch(infoPacks, -1)
-		jobs := make(chan string)
-		wg := sync.WaitGroup{}
+		queue = createQueue(len(hashes) * 3)
 		for w := 1; w <= utils.MinInt(maxConcurrency, len(hashes)); w++ {
-			go workers.DownloadWorker(c, jobs, baseUrl, baseDir, &wg)
+			go workers.DownloadWorker(c, queue, baseUrl, baseDir, &wg)
 		}
 		for _, sha1 := range hashes {
-			jobs <- fmt.Sprintf(".git/objects/pack/pack-%s.idx", sha1[1])
-			jobs <- fmt.Sprintf(".git/objects/pack/pack-%s.pack", sha1[1])
+			queue <- fmt.Sprintf(".git/objects/pack/pack-%s.idx", sha1[1])
+			queue <- fmt.Sprintf(".git/objects/pack/pack-%s.pack", sha1[1])
 		}
-		close(jobs)
+		close(queue)
 		wg.Wait()
 	}
 
@@ -264,16 +270,14 @@ func FetchGit(baseUrl, baseDir string) error {
 	}*/
 
 	fmt.Println("[-] Fetching objects")
-	jobs = make(chan string)
-	wg = sync.WaitGroup{}
+	queue = createQueue(1000)
 	for w := 1; w <= maxConcurrency; w++ {
-		go workers.FindObjectsWorker(c, jobs, baseUrl, baseDir, &wg, storage)
+		go workers.FindObjectsWorker(c, queue, baseUrl, baseDir, &wg, storage)
 	}
 	for obj := range objs {
-		jobs <- obj
+		queue <- obj
 	}
-	wg.Wait()
-	close(jobs)
+	waitForQueue(queue)
 
 	fmt.Println("[-] Running git checkout .")
 	cmd := exec.Command("git", "checkout", ".")

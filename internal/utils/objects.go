@@ -1,6 +1,8 @@
 package utils
 
-import "github.com/go-git/go-git/v5/plumbing/object"
+import (
+	"github.com/go-git/go-git/v5/plumbing/object"
+)
 
 func GetReferencedHashes(obj object.Object) []string {
 	var hashes []string

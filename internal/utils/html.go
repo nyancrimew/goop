@@ -7,10 +7,8 @@ import (
 	"strings"
 )
 
-var htmlTag = []byte{'<', 'h', 't', 'm', 'l', '>'}
+var htmlTag = []byte{'<', 'h', 't', 'm', 'l'}
 
-// TODO: this sometimes fails??
-// To test that behavior use goop on enigmaticboys dot com (adult website)
 func IsHtml(body []byte) bool {
 	return bytes.Contains(body, htmlTag)
 }

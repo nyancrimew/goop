@@ -4,8 +4,8 @@ import (
 	"bytes"
 	"crypto/tls"
 	"fmt"
-	"github.com/deletescape/goop/internal/stopandgo"
 	"github.com/deletescape/goop/internal/utils"
+	"github.com/deletescape/goop/internal/workers"
 	"github.com/go-git/go-billy/v5/osfs"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/cache"
@@ -21,10 +21,11 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 )
 
-const maxConcurrency = 50
+const maxConcurrency = 60
 
 var c = &fasthttp.Client{
 	MaxConnsPerHost: utils.MaxInt(maxConcurrency + 250, fasthttp.DefaultMaxConnsPerHost),
@@ -37,7 +38,6 @@ var c = &fasthttp.Client{
 
 var refPrefix = []byte{'r', 'e', 'f', ':'}
 var (
-	refRegex  = regexp.MustCompile(`(?m)(refs(/[a-zA-Z0-9\-\.\_\*]+)+)`)
 	packRegex = regexp.MustCompile(`(?m)pack-([a-f0-9]{40})\.pack`)
 	objRegex  = regexp.MustCompile(`(?m)(^|\s)([a-f0-9]{40})($|\s)`)
 )
@@ -100,8 +100,6 @@ var (
 	}
 )
 
-var sag = stopandgo.NewStopAndGo(maxConcurrency)
-
 func Clone(u, dir string, force bool) error {
 	baseUrl := strings.TrimSuffix(u, "/")
 	baseUrl = strings.TrimSuffix(baseUrl, "/HEAD")
@@ -150,177 +148,6 @@ func Clone(u, dir string, force bool) error {
 	return FetchGit(baseUrl, baseDir)
 }
 
-func DownloadRecursively(u, dir string, files []string) {
-	os.MkdirAll(dir, os.ModePerm)
-	for _, f := range files {
-		f := f
-		uri := utils.Url(u, f)
-		code, body, err := c.Get(nil, uri)
-		fmt.Printf("[-] Fetching %s [%d]\n", uri, code)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "error: %s\n", err)
-			return
-		}
-		if strings.HasSuffix(f, "/") {
-			sag.Add()
-			go func() {
-				defer sag.Done()
-				if !utils.IsHtml(body) {
-					fmt.Printf("warning: %s doesn't appear to be an index", uri)
-					return
-				}
-				indexedFiles, err := utils.GetIndexedFiles(body)
-				if err != nil {
-					fmt.Fprintf(os.Stderr, "error: %s\n", err)
-					return
-				}
-				DownloadRecursively(uri, utils.Url(dir, f), indexedFiles)
-			}()
-		} else {
-			sag.Add()
-			go func() {
-				defer sag.Done()
-				if utils.IsHtml(body) {
-					fmt.Printf("warning: %s doesn't appear to be a git file", uri)
-					return
-				}
-				if err := utils.CreateParentFolders(utils.Url(dir, f)); err != nil {
-					fmt.Fprintf(os.Stderr, "error: %s\n", err)
-					return
-				}
-				if err := ioutil.WriteFile(utils.Url(dir, f), body, os.ModePerm); err != nil {
-					fmt.Fprintf(os.Stderr, "error: %s\n", err)
-				}
-			}()
-		}
-	}
-}
-
-func FindRefs(baseUrl, baseDir, path string) {
-	sag.Add()
-	go func() {
-		defer sag.Done()
-		uri := utils.Url(baseUrl, path)
-		code, body, err := c.Get(nil, uri)
-		fmt.Printf("[-] Fetching %s [%d]\n", uri, code)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "error: %s\n", err)
-			return
-		}
-		if code == 200 {
-			if utils.IsHtml(body) {
-				fmt.Printf("warning: %s appears to be an html file, skipping\n", uri)
-				return
-			}
-			if err := utils.CreateParentFolders(utils.Url(baseDir, path)); err != nil {
-				fmt.Fprintf(os.Stderr, "error: %s\n", err)
-				return
-			}
-			if err := ioutil.WriteFile(utils.Url(baseDir, path), body, os.ModePerm); err != nil {
-				fmt.Fprintf(os.Stderr, "error: %s\n", err)
-				return
-			}
-
-			for _, ref := range refRegex.FindAll(body, -1) {
-				FindRefs(baseUrl, baseDir, string(ref))
-			}
-		}
-	}()
-}
-
-func Download(baseUrl, baseDir, file string) {
-	sag.Add()
-	go func() {
-		defer sag.Done()
-		uri := utils.Url(baseUrl, file)
-		code, body, err := c.Get(nil, uri)
-		fmt.Printf("[-] Fetching %s [%d]\n", uri, code)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "error: %s\n", err)
-			return
-		}
-		if code == 200 {
-			if utils.IsHtml(body) {
-				fmt.Printf("warning: %s appears to be an html file, skipping\n", uri)
-				return
-			}
-			if err := utils.CreateParentFolders(utils.Url(baseDir, file)); err != nil {
-				fmt.Fprintf(os.Stderr, "error: %s\n", err)
-				return
-			}
-			if err := ioutil.WriteFile(utils.Url(baseDir, file), body, os.ModePerm); err != nil {
-				fmt.Fprintf(os.Stderr, "error: %s\n", err)
-			}
-		}
-	}()
-}
-
-func GetReferencedHashes(obj object.Object) []string {
-	var hashes []string
-	switch o := obj.(type) {
-	case *object.Commit:
-		hashes = append(hashes, o.TreeHash.String())
-		for _, p := range o.ParentHashes {
-			hashes = append(hashes, p.String())
-		}
-	case *object.Tree:
-		for _, e := range o.Entries {
-			hashes = append(hashes, e.Hash.String())
-		}
-	case *object.Blob:
-		// pass
-	case *object.Tag:
-		hashes = append(hashes, o.Target.String())
-	}
-	return hashes
-}
-
-// TODO: more dedupe stuff
-func FindObjects(obj, baseUrl, baseDir string, storage *filesystem.ObjectStorage) {
-	sag.Add()
-	go func() {
-		defer sag.Done()
-		file := fmt.Sprintf(".git/objects/%s/%s", obj[:2], obj[2:])
-		uri := utils.Url(baseUrl, file)
-		code, body, err := c.Get(nil, uri)
-		fmt.Printf("[-] Fetching %s [%d]\n", uri, code)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "error: %s\n", err)
-			return
-		}
-		if code == 200 {
-			if utils.IsHtml(body) {
-				fmt.Printf("warning: %s appears to be an html file, skipping\n", uri)
-				return
-			}
-			fullPath := utils.Url(baseDir, file)
-			if err := utils.CreateParentFolders(fullPath); err != nil {
-				fmt.Fprintf(os.Stderr, "error: %s\n", err)
-				return
-			}
-			if err := ioutil.WriteFile(fullPath, body, os.ModePerm); err != nil {
-				fmt.Fprintf(os.Stderr, "error: %s\n", err)
-				return
-			}
-
-			encObj, err := storage.EncodedObject(plumbing.AnyObject, plumbing.NewHash(obj))
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "error: %s\n", err)
-				return
-			}
-			decObj, err := object.DecodeObject(storage, encObj)
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "error: %s\n", err)
-				return
-			}
-			referencedHashes := GetReferencedHashes(decObj)
-			for _, h := range referencedHashes {
-				FindObjects(h, baseUrl, baseDir, storage)
-			}
-		}
-	}()
-}
-
 func FetchGit(baseUrl, baseDir string) error {
 	fmt.Printf("[-] Testing %s/.git/HEAD ", baseUrl)
 	code, body, err := c.Get(nil, utils.Url(baseUrl, ".git/HEAD"))
@@ -349,8 +176,17 @@ func FetchGit(baseUrl, baseDir string) error {
 		}
 		if utils.StringsContain(indexedFiles, "HEAD") {
 			fmt.Println("[-] Fetching .git recursively")
-			DownloadRecursively(utils.Url(baseUrl, ".git/"), utils.Url(baseDir, ".git/"), indexedFiles)
-			sag.Wait()
+			jobs := make(chan string)
+			wg := sync.WaitGroup{}
+			for w := 1; w <= maxConcurrency; w++ {
+				go workers.RecursiveDownloadWorker(c, jobs, baseUrl, baseDir, &wg)
+			}
+			for _, f := range indexedFiles {
+				// TODO: add support for non top level git repos
+				jobs <- utils.Url(".git", f)
+			}
+			wg.Wait()
+			close(jobs)
 			fmt.Println("[-] Running git checkout .")
 			cmd := exec.Command("git", "checkout", ".")
 			cmd.Dir = baseDir
@@ -359,16 +195,28 @@ func FetchGit(baseUrl, baseDir string) error {
 	}
 
 	fmt.Println("[-] Fetching common files")
-	for _, f := range commonFiles {
-		Download(baseUrl, baseDir, f)
+	jobs := make(chan string)
+	wg := sync.WaitGroup{}
+	for w := 1; w <= utils.MinInt(maxConcurrency, len(commonFiles)); w++ {
+		go workers.DownloadWorker(c, jobs, baseUrl, baseDir, &wg)
 	}
-	sag.Wait()
+	for _, f := range commonFiles {
+		jobs <- f
+	}
+	close(jobs)
+	wg.Wait()
 
 	fmt.Println("[-] Finding refs")
-	for _, ref := range commonRefs {
-		FindRefs(baseUrl, baseDir, ref)
+	jobs = make(chan string)
+	wg = sync.WaitGroup{}
+	for w := 1; w <= maxConcurrency; w++ {
+		go workers.FindRefWorker(c, jobs, baseUrl, baseDir, &wg)
 	}
-	sag.Wait()
+	for _, ref := range commonRefs {
+		jobs <- ref
+	}
+	wg.Wait()
+	close(jobs)
 
 	fmt.Println("[-] Finding packs")
 	infoPacksPath := utils.Url(baseDir, ".git/objects/info/packs")
@@ -378,11 +226,18 @@ func FetchGit(baseUrl, baseDir string) error {
 		if err != nil {
 			return err
 		}
-		for _, sha1 := range packRegex.FindAll(infoPacks, -1) {
-			Download(baseUrl, baseDir, fmt.Sprintf("./git/objects/pack/pack-%s.idx", sha1))
-			Download(baseUrl, baseDir, fmt.Sprintf("./git/objects/pack/pack-%s.pack", sha1))
+		hashes := packRegex.FindAll(infoPacks, -1)
+		jobs := make(chan string)
+		wg := sync.WaitGroup{}
+		for w := 1; w <= utils.MinInt(maxConcurrency, len(hashes)); w++ {
+			go workers.DownloadWorker(c, jobs, baseUrl, baseDir, &wg)
 		}
-		sag.Wait()
+		for _, sha1 := range hashes {
+			jobs <- fmt.Sprintf("./git/objects/pack/pack-%s.idx", sha1)
+			jobs <- fmt.Sprintf("./git/objects/pack/pack-%s.pack", sha1)
+		}
+		close(jobs)
+		wg.Wait()
 	}
 
 	fmt.Println("[-] Finding objects")
@@ -464,7 +319,7 @@ func FetchGit(baseUrl, baseDir string) error {
 		if err != nil {
 			return fmt.Errorf("error: %s\n", err)
 		}
-		for _, hash := range GetReferencedHashes(decObj) {
+		for _, hash := range utils.GetReferencedHashes(decObj) {
 			objs[hash] = true
 		}
 		return nil
@@ -477,10 +332,16 @@ func FetchGit(baseUrl, baseDir string) error {
 	}*/
 
 	fmt.Println("[-] Fetching objects")
-	for obj := range objs {
-		FindObjects(obj, baseUrl, baseDir, storage)
+	jobs = make(chan string)
+	wg = sync.WaitGroup{}
+	for w := 1; w <= maxConcurrency; w++ {
+		go workers.FindObjectsWorker(c, jobs, baseUrl, baseDir, &wg, storage)
 	}
-	sag.Wait()
+	for obj := range objs {
+		jobs <- obj
+	}
+	wg.Wait()
+	close(jobs)
 
 	fmt.Println("[-] Running git checkout .")
 	cmd := exec.Command("git", "checkout", ".")

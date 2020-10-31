@@ -154,7 +154,6 @@ func FetchGit(baseUrl, baseDir string) error {
 	fmt.Println("[-] Finding packs")
 	infoPacksPath := utils.Url(baseDir, ".git/objects/info/packs")
 	if utils.Exists(infoPacksPath) {
-		fmt.Println("exists")
 		infoPacks, err := ioutil.ReadFile(infoPacksPath)
 		if err != nil {
 			return err

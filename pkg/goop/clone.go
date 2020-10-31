@@ -158,15 +158,15 @@ func FetchGit(baseUrl, baseDir string) error {
 		if err != nil {
 			return err
 		}
-		hashes := packRegex.FindAll(infoPacks, -1)
+		hashes := packRegex.FindAllSubmatch(infoPacks, -1)
 		jobs := make(chan string)
 		wg := sync.WaitGroup{}
 		for w := 1; w <= utils.MinInt(maxConcurrency, len(hashes)); w++ {
 			go workers.DownloadWorker(c, jobs, baseUrl, baseDir, &wg)
 		}
 		for _, sha1 := range hashes {
-			jobs <- fmt.Sprintf("./git/objects/pack/pack-%s.idx", sha1)
-			jobs <- fmt.Sprintf("./git/objects/pack/pack-%s.pack", sha1)
+			jobs <- fmt.Sprintf(".git/objects/pack/pack-%s.idx", sha1[1])
+			jobs <- fmt.Sprintf(".git/objects/pack/pack-%s.pack", sha1[1])
 		}
 		close(jobs)
 		wg.Wait()

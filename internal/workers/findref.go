@@ -42,7 +42,7 @@ func FindRefWorker(c *fasthttp.Client, jobs chan string, baseUrl, baseDir string
 				}
 
 				for _, ref := range refRegex.FindAll(body, -1) {
-					jobs <- string(ref)
+					jobs <- utils.Url(".git", string(ref))
 				}
 			}
 		default:

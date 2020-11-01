@@ -154,7 +154,7 @@ func FetchGit(baseUrl, baseDir string) error {
 		}
 		if utils.StringsContain(indexedFiles, "HEAD") {
 			fmt.Println("[-] Fetching .git recursively")
-			queue := createQueue(100)
+			queue := createQueue(1000)
 			for w := 1; w <= maxConcurrency; w++ {
 				go workers.RecursiveDownloadWorker(c, queue, baseUrl, baseDir, &wg)
 			}

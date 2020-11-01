@@ -1,6 +1,7 @@
 package goop
 
 import (
+	"bufio"
 	"bytes"
 	"crypto/tls"
 	"fmt"
@@ -43,6 +44,38 @@ func createQueue(scale int) chan string {
 func waitForQueue(queue chan string) {
 	wg.Wait()
 	close(queue)
+}
+
+func CloneList(listFile, baseDir string, force bool) error {
+	lf, err := os.Open(listFile)
+	if err != nil {
+		return err
+	}
+	defer lf.Close()
+
+	listScan := bufio.NewScanner(lf)
+	for listScan.Scan() {
+		u := listScan.Text()
+		if u == "" {
+			continue
+		}
+		dir := baseDir
+		if dir != "" {
+			parsed, err := url.Parse(u)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "error: %s\n", err)
+				continue
+			}
+			dir = utils.Url(dir, parsed.Host)
+		}
+		fmt.Printf("[-] Downloading %s to %s\n", u, dir)
+		if err := Clone(u, dir, force); err != nil {
+			fmt.Fprintf(os.Stderr, "error: %s\n", err)
+		}
+		fmt.Println()
+		fmt.Println()
+	}
+	return nil
 }
 
 func Clone(u, dir string, force bool) error {

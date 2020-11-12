@@ -16,6 +16,11 @@ func DownloadWorker(c *fasthttp.Client, queue <-chan string, baseUrl, baseDir st
 		if file == "" {
 			continue
 		}
+		targetFile := utils.Url(baseDir, file)
+		if utils.Exists(targetFile) {
+			fmt.Printf("%s was downloaded already, skipping\n", targetFile)
+			continue
+		}
 		uri := utils.Url(baseUrl, file)
 		code, body, err := c.Get(nil, uri)
 		fmt.Printf("[-] Fetching %s [%d]\n", uri, code)
@@ -28,11 +33,15 @@ func DownloadWorker(c *fasthttp.Client, queue <-chan string, baseUrl, baseDir st
 				fmt.Printf("warning: %s appears to be an html file, skipping\n", uri)
 				continue
 			}
-			if err := utils.CreateParentFolders(utils.Url(baseDir, file)); err != nil {
+			if len(body) == 0 {
+				fmt.Printf("warning: %s appears to be an empty file, skipping\n", uri)
+				continue
+			}
+			if err := utils.CreateParentFolders(targetFile); err != nil {
 				fmt.Fprintf(os.Stderr, "error: %s\n", err)
 				continue
 			}
-			if err := ioutil.WriteFile(utils.Url(baseDir, file), body, os.ModePerm); err != nil {
+			if err := ioutil.WriteFile(targetFile, body, os.ModePerm); err != nil {
 				fmt.Fprintf(os.Stderr, "error: %s\n", err)
 			}
 		}

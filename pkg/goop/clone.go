@@ -26,6 +26,7 @@ import (
 )
 
 var c = &fasthttp.Client{
+	Name:            "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/85.0.4183.102 Safari/537.36",
 	MaxConnsPerHost: utils.MaxInt(maxConcurrency+250, fasthttp.DefaultMaxConnsPerHost),
 	TLSConfig: &tls.Config{
 		InsecureSkipVerify: true,
@@ -38,7 +39,7 @@ var wg sync.WaitGroup
 
 func createQueue(scale int) chan string {
 	wg = sync.WaitGroup{}
-	return make(chan string, maxConcurrency * scale)
+	return make(chan string, maxConcurrency*scale)
 }
 
 func waitForQueue(queue chan string) {
@@ -46,7 +47,7 @@ func waitForQueue(queue chan string) {
 	close(queue)
 }
 
-func CloneList(listFile, baseDir string, force bool) error {
+func CloneList(listFile, baseDir string, force, keep bool) error {
 	lf, err := os.Open(listFile)
 	if err != nil {
 		return err
@@ -69,7 +70,7 @@ func CloneList(listFile, baseDir string, force bool) error {
 			dir = utils.Url(dir, parsed.Host)
 		}
 		fmt.Printf("[-] Downloading %s to %s\n", u, dir)
-		if err := Clone(u, dir, force); err != nil {
+		if err := Clone(u, dir, force, keep); err != nil {
 			fmt.Fprintf(os.Stderr, "error: %s\n", err)
 		}
 		fmt.Println()
@@ -78,7 +79,7 @@ func CloneList(listFile, baseDir string, force bool) error {
 	return nil
 }
 
-func Clone(u, dir string, force bool) error {
+func Clone(u, dir string, force, keep bool) error {
 	baseUrl := strings.TrimSuffix(u, "/")
 	baseUrl = strings.TrimSuffix(baseUrl, "/HEAD")
 	baseUrl = strings.TrimSuffix(baseUrl, "/.git")
@@ -112,12 +113,14 @@ func Clone(u, dir string, force bool) error {
 		return err
 	}
 	if !isEmpty {
-		if force {
-			if err := os.RemoveAll(baseDir); err != nil {
-				return err
-			}
-			if err := os.MkdirAll(baseDir, os.ModePerm); err != nil {
-				return err
+		if force || keep {
+			if !keep {
+				if err := os.RemoveAll(baseDir); err != nil {
+					return err
+				}
+				if err := os.MkdirAll(baseDir, os.ModePerm); err != nil {
+					return err
+				}
 			}
 		} else {
 			return fmt.Errorf("%s is not empty", baseDir)
@@ -135,9 +138,11 @@ func FetchGit(baseUrl, baseDir string) error {
 	}
 
 	if code != 200 {
-		return fmt.Errorf("error: %s/.git/HEAD does not exist", baseUrl)
+		fmt.Fprintf(os.Stderr, "error: %s/.git/HEAD does not exist", baseUrl)
+		//return fmt.Errorf("error: %s/.git/HEAD does not exist", baseUrl)
 	} else if !bytes.HasPrefix(body, refPrefix) {
-		return fmt.Errorf("error: %s/.git/HEAD is not a git HEAD file", baseUrl)
+		fmt.Fprintf(os.Stderr, "error: %s/.git/HEAD is not a git HEAD file", baseUrl)
+		//return fmt.Errorf("error: %s/.git/HEAD is not a git HEAD file", baseUrl)
 	}
 
 	fmt.Printf("[-] Testing %s/.git/ ", baseUrl)
@@ -222,29 +227,34 @@ func FetchGit(baseUrl, baseDir string) error {
 		utils.Url(baseDir, ".git/ORIG_HEAD"),
 	}
 
-	if err := filepath.Walk(utils.Url(baseDir, ".git/refs"), func(path string, info os.FileInfo, err error) error {
-		if err != nil {
+	gitRefsDir := utils.Url(baseDir, ".git/refs")
+	if utils.Exists(gitRefsDir) {
+		if err := filepath.Walk(gitRefsDir, func(path string, info os.FileInfo, err error) error {
+			if err != nil {
+				return err
+			}
+			if !info.IsDir() {
+				files = append(files, path)
+			}
+			return nil
+		}); err != nil {
 			return err
 		}
-		if !info.IsDir() {
-			files = append(files, path)
-		}
-		return nil
-	}); err != nil {
-		return err
 	}
-	if err := filepath.Walk(utils.Url(baseDir, ".git/logs"), func(path string, info os.FileInfo, err error) error {
-		if err != nil {
+	gitLogsDir := utils.Url(baseDir, ".git/logs")
+	if utils.Exists(gitLogsDir) {
+		if err := filepath.Walk(gitLogsDir, func(path string, info os.FileInfo, err error) error {
+			if err != nil {
+				return err
+			}
+			if !info.IsDir() {
+				files = append(files, path)
+			}
+			return nil
+		}); err != nil {
 			return err
 		}
-		if !info.IsDir() {
-			files = append(files, path)
-		}
-		return nil
-	}); err != nil {
-		return err
 	}
-
 	for _, f := range files {
 		if !utils.Exists(f) {
 			continue
@@ -303,7 +313,7 @@ func FetchGit(baseUrl, baseDir string) error {
 	}*/
 
 	fmt.Println("[-] Fetching objects")
-	queue = createQueue(1000)
+	queue = createQueue(2000)
 	for w := 1; w <= maxConcurrency; w++ {
 		go workers.FindObjectsWorker(c, queue, baseUrl, baseDir, &wg, storage)
 	}

@@ -37,6 +37,25 @@ func FindObjectsWorker(c *fasthttp.Client, queue chan string, baseUrl, baseDir s
 			}
 			checkedObjsMutex.Unlock()
 			file := fmt.Sprintf(".git/objects/%s/%s", obj[:2], obj[2:])
+			fullPath := utils.Url(baseDir, file)
+			if utils.Exists(fullPath) {
+				fmt.Printf("%s was downloaded already, skipping\n", fullPath)
+				encObj, err := storage.EncodedObject(plumbing.AnyObject, plumbing.NewHash(obj))
+				if err != nil {
+					fmt.Fprintf(os.Stderr, "error: %s\n", err)
+					continue
+				}
+				decObj, err := object.DecodeObject(storage, encObj)
+				if err != nil {
+					fmt.Fprintf(os.Stderr, "error: %s\n", err)
+					continue
+				}
+				referencedHashes := utils.GetReferencedHashes(decObj)
+				for _, h := range referencedHashes {
+					queue <- h
+				}
+				continue
+			}
 			uri := utils.Url(baseUrl, file)
 			code, body, err := c.Get(nil, uri)
 			fmt.Printf("[-] Fetching %s [%d]\n", uri, code)
@@ -49,7 +68,10 @@ func FindObjectsWorker(c *fasthttp.Client, queue chan string, baseUrl, baseDir s
 					fmt.Printf("warning: %s appears to be an html file, skipping\n", uri)
 					continue
 				}
-				fullPath := utils.Url(baseDir, file)
+				if len(body) == 0 {
+					fmt.Printf("warning: %s appears to be an empty file, skipping\n", uri)
+					continue
+				}
 				if err := utils.CreateParentFolders(fullPath); err != nil {
 					fmt.Fprintf(os.Stderr, "error: %s\n", err)
 					continue

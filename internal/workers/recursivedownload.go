@@ -22,6 +22,12 @@ func RecursiveDownloadWorker(c *fasthttp.Client, queue chan string, baseUrl, bas
 				continue
 			}
 			ctr = 0
+			filePath := utils.Url(baseDir, f)
+			isDir := strings.HasSuffix(f, "/")
+			if !isDir && utils.Exists(filePath) {
+				fmt.Printf("%s was downloaded already, skipping\n", filePath)
+				continue
+			}
 			uri := utils.Url(baseUrl, f)
 			code, body, err := c.Get(nil, uri)
 			fmt.Printf("[-] Fetching %s [%d]\n", uri, code)
@@ -29,7 +35,7 @@ func RecursiveDownloadWorker(c *fasthttp.Client, queue chan string, baseUrl, bas
 				fmt.Fprintf(os.Stderr, "error: %s\n", err)
 				continue
 			}
-			if strings.HasSuffix(f, "/") {
+			if isDir {
 				if !utils.IsHtml(body) {
 					fmt.Printf("warning: %s doesn't appear to be an index", uri)
 					continue
@@ -43,15 +49,11 @@ func RecursiveDownloadWorker(c *fasthttp.Client, queue chan string, baseUrl, bas
 					queue <- utils.Url(f, idxf)
 				}
 			} else {
-				if utils.IsHtml(body) {
-					fmt.Printf("warning: %s doesn't appear to be a git file", uri)
-					continue
-				}
-				if err := utils.CreateParentFolders(utils.Url(baseDir, f)); err != nil {
+				if err := utils.CreateParentFolders(filePath); err != nil {
 					fmt.Fprintf(os.Stderr, "error: %s\n", err)
 					continue
 				}
-				if err := ioutil.WriteFile(utils.Url(baseDir, f), body, os.ModePerm); err != nil {
+				if err := ioutil.WriteFile(filePath, body, os.ModePerm); err != nil {
 					fmt.Fprintf(os.Stderr, "error: %s\n", err)
 				}
 			}

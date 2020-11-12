@@ -281,7 +281,8 @@ func FetchGit(baseUrl, baseDir string) error {
 		var idx index.Index
 		decoder := index.NewDecoder(f)
 		if err := decoder.Decode(&idx); err != nil {
-			return err
+			fmt.Fprintf(os.Stderr, "error: %s\n", err)
+			//return err
 		}
 		for _, entry := range idx.Entries {
 			objs[entry.Hash.String()] = true

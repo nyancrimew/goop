@@ -17,7 +17,6 @@ var checkedObjs = make(map[string]bool)
 var checkedObjsMutex sync.Mutex
 
 func FindObjectsWorker(c *fasthttp.Client, queue chan string, baseUrl, baseDir string, wg *sync.WaitGroup, storage *filesystem.ObjectStorage) {
-	wg.Add(1)
 	defer wg.Done()
 	var ctr int
 	for {
@@ -68,7 +67,7 @@ func FindObjectsWorker(c *fasthttp.Client, queue chan string, baseUrl, baseDir s
 					fmt.Printf("warning: %s appears to be an html file, skipping\n", uri)
 					continue
 				}
-				if len(body) == 0 {
+				if utils.IsEmptyBytes(body) {
 					fmt.Printf("warning: %s appears to be an empty file, skipping\n", uri)
 					continue
 				}

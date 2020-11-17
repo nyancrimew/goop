@@ -12,7 +12,6 @@ import (
 )
 
 func RecursiveDownloadWorker(c *fasthttp.Client, queue chan string, baseUrl, baseDir string, wg *sync.WaitGroup) {
-	wg.Add(1)
 	defer wg.Done()
 	var ctr int
 	for {

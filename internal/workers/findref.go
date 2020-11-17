@@ -17,7 +17,6 @@ var checkedRefs = make(map[string]bool)
 var checkedRefsMutex sync.Mutex
 
 func FindRefWorker(c *fasthttp.Client, queue chan string, baseUrl, baseDir string, wg *sync.WaitGroup) {
-	wg.Add(1)
 	defer wg.Done()
 	var ctr int
 	for {
@@ -60,7 +59,7 @@ func FindRefWorker(c *fasthttp.Client, queue chan string, baseUrl, baseDir strin
 					fmt.Printf("warning: %s appears to be an html file, skipping\n", uri)
 					continue
 				}
-				if len(body) == 0 {
+				if utils.IsEmptyBytes(body) {
 					fmt.Printf("warning: %s appears to be an empty file, skipping\n", uri)
 					continue
 				}

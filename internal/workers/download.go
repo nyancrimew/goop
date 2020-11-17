@@ -10,7 +10,6 @@ import (
 )
 
 func DownloadWorker(c *fasthttp.Client, queue <-chan string, baseUrl, baseDir string, wg *sync.WaitGroup) {
-	wg.Add(1)
 	defer wg.Done()
 	for file := range queue {
 		if file == "" {
@@ -33,7 +32,7 @@ func DownloadWorker(c *fasthttp.Client, queue <-chan string, baseUrl, baseDir st
 				fmt.Printf("warning: %s appears to be an html file, skipping\n", uri)
 				continue
 			}
-			if len(body) == 0 {
+			if utils.IsEmptyBytes(body) {
 				fmt.Printf("warning: %s appears to be an empty file, skipping\n", uri)
 				continue
 			}

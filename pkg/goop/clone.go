@@ -138,18 +138,20 @@ func FetchGit(baseUrl, baseDir string) error {
 	}
 
 	if code != 200 {
-		fmt.Fprintf(os.Stderr, "error: %s/.git/HEAD does not exist", baseUrl)
-		//return fmt.Errorf("error: %s/.git/HEAD does not exist", baseUrl)
+		fmt.Fprintf(os.Stderr, "error: %s/.git/HEAD does not exist\n", baseUrl)
 	} else if !bytes.HasPrefix(body, refPrefix) {
-		fmt.Fprintf(os.Stderr, "error: %s/.git/HEAD is not a git HEAD file", baseUrl)
-		//return fmt.Errorf("error: %s/.git/HEAD is not a git HEAD file", baseUrl)
+		fmt.Fprintf(os.Stderr, "error: %s/.git/HEAD is not a git HEAD file\n", baseUrl)
 	}
 
 	fmt.Printf("[-] Testing %s/.git/ ", baseUrl)
 	code, body, err = c.Get(nil, utils.Url(baseUrl, ".git/"))
 	fmt.Printf("[%d]\n", code)
 	if err != nil {
-		return err
+		if utils.IgnoreError(err) {
+			fmt.Fprintf(os.Stderr, "error: %s\n", err)
+		} else {
+			return err
+		}
 	}
 
 	if code == 200 && utils.IsHtml(body) {
@@ -159,7 +161,8 @@ func FetchGit(baseUrl, baseDir string) error {
 		}
 		if utils.StringsContain(indexedFiles, "HEAD") {
 			fmt.Println("[-] Fetching .git recursively")
-			queue := createQueue(1000)
+			queue := createQueue(2000)
+			wg.Add(maxConcurrency)
 			for w := 1; w <= maxConcurrency; w++ {
 				go workers.RecursiveDownloadWorker(c, queue, baseUrl, baseDir, &wg)
 			}
@@ -177,7 +180,9 @@ func FetchGit(baseUrl, baseDir string) error {
 
 	fmt.Println("[-] Fetching common files")
 	queue := createQueue(len(commonFiles))
-	for w := 1; w <= utils.MinInt(maxConcurrency, len(commonFiles)); w++ {
+	concurrency := utils.MinInt(maxConcurrency, len(commonFiles))
+	wg.Add(concurrency)
+	for w := 1; w <= concurrency; w++ {
 		go workers.DownloadWorker(c, queue, baseUrl, baseDir, &wg)
 	}
 	for _, f := range commonFiles {
@@ -188,6 +193,7 @@ func FetchGit(baseUrl, baseDir string) error {
 
 	fmt.Println("[-] Finding refs")
 	queue = createQueue(100)
+	wg.Add(maxConcurrency)
 	for w := 1; w <= maxConcurrency; w++ {
 		go workers.FindRefWorker(c, queue, baseUrl, baseDir, &wg)
 	}
@@ -205,7 +211,9 @@ func FetchGit(baseUrl, baseDir string) error {
 		}
 		hashes := packRegex.FindAllSubmatch(infoPacks, -1)
 		queue = createQueue(len(hashes) * 3)
-		for w := 1; w <= utils.MinInt(maxConcurrency, len(hashes)); w++ {
+		concurrency := utils.MinInt(maxConcurrency, len(hashes))
+		wg.Add(concurrency)
+		for w := 1; w <= concurrency; w++ {
 			go workers.DownloadWorker(c, queue, baseUrl, baseDir, &wg)
 		}
 		for _, sha1 := range hashes {
@@ -225,6 +233,7 @@ func FetchGit(baseUrl, baseDir string) error {
 		utils.Url(baseDir, ".git/info/refs"),
 		utils.Url(baseDir, ".git/FETCH_HEAD"),
 		utils.Url(baseDir, ".git/ORIG_HEAD"),
+		utils.Url(baseDir, ".git/HEAD"),
 	}
 
 	gitRefsDir := utils.Url(baseDir, ".git/refs")
@@ -315,6 +324,7 @@ func FetchGit(baseUrl, baseDir string) error {
 
 	fmt.Println("[-] Fetching objects")
 	queue = createQueue(2000)
+	wg.Add(maxConcurrency)
 	for w := 1; w <= maxConcurrency; w++ {
 		go workers.FindObjectsWorker(c, queue, baseUrl, baseDir, &wg, storage)
 	}

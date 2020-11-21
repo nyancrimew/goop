@@ -5,9 +5,11 @@ import "regexp"
 const maxConcurrency = 30
 
 var refPrefix = []byte{'r', 'e', 'f', ':'}
+var phpSuffix = []byte{'.', 'p', 'h', 'p'}
 var (
 	packRegex = regexp.MustCompile(`(?m)pack-([a-f0-9]{40})\.pack`)
 	objRegex  = regexp.MustCompile(`(?m)(^|\s)([a-f0-9]{40})($|\s)`)
+	stdErrRegex = regexp.MustCompile(`error: unable to read sha1 file of (.+?) \(.*`)
 )
 var (
 	commonFiles = []string{

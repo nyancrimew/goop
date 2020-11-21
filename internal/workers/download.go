@@ -9,7 +9,7 @@ import (
 	"sync"
 )
 
-func DownloadWorker(c *fasthttp.Client, queue <-chan string, baseUrl, baseDir string, wg *sync.WaitGroup) {
+func DownloadWorker(c *fasthttp.Client, queue <-chan string, baseUrl, baseDir string, wg *sync.WaitGroup, allowHtml bool) {
 	defer wg.Done()
 	for file := range queue {
 		if file == "" {
@@ -28,7 +28,7 @@ func DownloadWorker(c *fasthttp.Client, queue <-chan string, baseUrl, baseDir st
 			continue
 		}
 		if code == 200 {
-			if utils.IsHtml(body) {
+			if !allowHtml && utils.IsHtml(body) {
 				fmt.Printf("warning: %s appears to be an html file, skipping\n", uri)
 				continue
 			}

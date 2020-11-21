@@ -183,7 +183,7 @@ func FetchGit(baseUrl, baseDir string) error {
 	concurrency := utils.MinInt(maxConcurrency, len(commonFiles))
 	wg.Add(concurrency)
 	for w := 1; w <= concurrency; w++ {
-		go workers.DownloadWorker(c, queue, baseUrl, baseDir, &wg)
+		go workers.DownloadWorker(c, queue, baseUrl, baseDir, &wg, false)
 	}
 	for _, f := range commonFiles {
 		queue <- f
@@ -214,7 +214,7 @@ func FetchGit(baseUrl, baseDir string) error {
 		concurrency := utils.MinInt(maxConcurrency, len(hashes))
 		wg.Add(concurrency)
 		for w := 1; w <= concurrency; w++ {
-			go workers.DownloadWorker(c, queue, baseUrl, baseDir, &wg)
+			go workers.DownloadWorker(c, queue, baseUrl, baseDir, &wg, false)
 		}
 		for _, sha1 := range hashes {
 			queue <- fmt.Sprintf(".git/objects/pack/pack-%s.idx", sha1[1])
@@ -315,7 +315,7 @@ func FetchGit(baseUrl, baseDir string) error {
 		}
 		return nil
 	}); err != nil {
-		return err
+		fmt.Fprintf(os.Stderr, "error: %s\n", err)
 	}
 	// TODO: find more objects to fetch in pack files and remove packed objects from list of objects to be fetched
 	/*for _, pack := range storage.ObjectPacks() {
@@ -336,5 +336,32 @@ func FetchGit(baseUrl, baseDir string) error {
 	fmt.Println("[-] Running git checkout .")
 	cmd := exec.Command("git", "checkout", ".")
 	cmd.Dir = baseDir
-	return cmd.Run()
+	stderr := &bytes.Buffer{}
+	cmd.Stderr = stderr
+	if err := cmd.Run(); err != nil {
+		if exErr, ok := err.(*exec.ExitError); ok && exErr.ProcessState.ExitCode() == 255 {
+			fmt.Println("[-] Attempting to fetch missing files")
+			out, err := ioutil.ReadAll(stderr)
+			if err != nil {
+				return err
+			}
+			errors := stdErrRegex.FindAllSubmatch(out, -1)
+			queue = createQueue(len(errors) * 3)
+			concurrency := utils.MinInt(maxConcurrency, len(errors))
+			wg.Add(concurrency)
+			for w := 1; w <= concurrency; w++ {
+				go workers.DownloadWorker(c, queue, baseUrl, baseDir, &wg, true)
+			}
+			for _, e := range errors {
+				if !bytes.HasSuffix(e[1], phpSuffix) {
+					queue <- string(e[1])
+				}
+			}
+			close(queue)
+			wg.Wait()
+		} else {
+			return err
+		}
+	}
+	return nil
 }

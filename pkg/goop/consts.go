@@ -9,6 +9,7 @@ var phpSuffix = []byte{'.', 'p', 'h', 'p'}
 var (
 	packRegex = regexp.MustCompile(`(?m)pack-([a-f0-9]{40})\.pack`)
 	objRegex  = regexp.MustCompile(`(?m)(^|\s)([a-f0-9]{40})($|\s)`)
+	refLogRegex  = regexp.MustCompile(`(?m)^(?:[a-f0-9]{40}) ([a-f0-9]{40}) .*$`)
 	stdErrRegex = regexp.MustCompile(`error: unable to read sha1 file of (.+?) \(.*`)
 )
 var (

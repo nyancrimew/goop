@@ -252,12 +252,37 @@ func FetchGit(baseUrl, baseDir string) error {
 	}
 	gitLogsDir := utils.Url(baseDir, ".git/logs")
 	if utils.Exists(gitLogsDir) {
+		refLogPrefix := utils.Url(gitLogsDir, "refs") + "/"
 		if err := filepath.Walk(gitLogsDir, func(path string, info os.FileInfo, err error) error {
 			if err != nil {
 				return err
 			}
 			if !info.IsDir() {
 				files = append(files, path)
+
+				if strings.HasPrefix(path, refLogPrefix) {
+					refName := strings.TrimPrefix(path, refLogPrefix)
+					fmt.Println(refName)
+					filePath := utils.Url(gitRefsDir, refName)
+					if !utils.Exists(filePath) {
+						fmt.Println("[-] Generating ref file for", refName)
+
+						content, err := ioutil.ReadFile(path)
+						if err != nil {
+							fmt.Fprintf(os.Stderr, "error: %s\n", err)
+						}
+
+						// Find the last reflog entry and extract the obj hash and write that to the ref file
+						logObjs := refLogRegex.FindAllSubmatch(content, -1)
+						lastEntryObj := logObjs[len(logObjs)-1][1]
+
+						utils.CreateParentFolders(filePath)
+
+						if err := ioutil.WriteFile(filePath, lastEntryObj, os.ModePerm); err != nil {
+							fmt.Fprintf(os.Stderr, "error: %s\n", err)
+						}
+					}
+				}
 			}
 			return nil
 		}); err != nil {

@@ -269,13 +269,17 @@ func FetchGit(baseUrl, baseDir string) error {
 						content, err := ioutil.ReadFile(path)
 						if err != nil {
 							fmt.Fprintf(os.Stderr, "error: %s\n", err)
+							return nil
 						}
 
 						// Find the last reflog entry and extract the obj hash and write that to the ref file
 						logObjs := refLogRegex.FindAllSubmatch(content, -1)
 						lastEntryObj := logObjs[len(logObjs)-1][1]
 
-						utils.CreateParentFolders(filePath)
+						if err := utils.CreateParentFolders(filePath); err != nil {
+							fmt.Fprintf(os.Stderr, "error: %s\n", err)
+							return nil
+						}
 
 						if err := ioutil.WriteFile(filePath, lastEntryObj, os.ModePerm); err != nil {
 							fmt.Fprintf(os.Stderr, "error: %s\n", err)
@@ -363,7 +367,7 @@ func FetchGit(baseUrl, baseDir string) error {
 	stderr := &bytes.Buffer{}
 	cmd.Stderr = stderr
 	if err := cmd.Run(); err != nil {
-		if exErr, ok := err.(*exec.ExitError); ok && exErr.ProcessState.ExitCode() == 255 {
+		if exErr, ok := err.(*exec.ExitError); ok && exErr.ProcessState.ExitCode() == 255 || exErr.ProcessState.ExitCode() == 128 {
 			fmt.Println("[-] Attempting to fetch missing files")
 			out, err := ioutil.ReadAll(stderr)
 			if err != nil {
@@ -378,6 +382,35 @@ func FetchGit(baseUrl, baseDir string) error {
 			}
 			for _, e := range errors {
 				if !bytes.HasSuffix(e[1], phpSuffix) {
+					queue <- string(e[1])
+				}
+			}
+			close(queue)
+			wg.Wait()
+
+			// Fetch files marked as missing in status
+			cmd := exec.Command("git", "status")
+			cmd.Dir = baseDir
+			stdout := &bytes.Buffer{}
+			cmd.Stdout = stdout
+			err = cmd.Run()
+			if err != nil {
+				// ignore errors, this will likely error almost every time
+				return nil
+			}
+			out, err = ioutil.ReadAll(stdout)
+			if err != nil {
+				return err
+			}
+			deleted := statusRegex.FindAllSubmatch(out, -1)
+			queue = createQueue(len(deleted) * 3)
+			concurrency = utils.MinInt(maxConcurrency, len(deleted))
+			wg.Add(concurrency)
+			for w := 1; w <= concurrency; w++ {
+				go workers.DownloadWorker(c, queue, baseUrl, baseDir, &wg, true)
+			}
+			for _, e := range deleted {
+				if!bytes.HasSuffix(e[1], phpSuffix) {
 					queue <- string(e[1])
 				}
 			}

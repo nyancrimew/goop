@@ -11,6 +11,7 @@ var (
 	objRegex  = regexp.MustCompile(`(?m)(^|\s)([a-f0-9]{40})($|\s)`)
 	refLogRegex  = regexp.MustCompile(`(?m)^(?:[a-f0-9]{40}) ([a-f0-9]{40}) .*$`)
 	stdErrRegex = regexp.MustCompile(`error: unable to read sha1 file of (.+?) \(.*`)
+	statusRegex = regexp.MustCompile(`deleted: {4}(.+)`)
 )
 var (
 	commonFiles = []string{

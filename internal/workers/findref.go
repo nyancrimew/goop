@@ -12,7 +12,7 @@ import (
 )
 
 var refRegex = regexp.MustCompile(`(?m)(refs(/[a-zA-Z0-9\-\.\_\*]+)+)`)
-var branchRegex = regexp.MustCompile(`(?m)\[branch "(.+)"]`)
+var branchRegex = regexp.MustCompile(`(?m)branch ["'](.+)["']`)
 
 var checkedRefs = make(map[string]bool)
 var checkedRefsMutex sync.Mutex
@@ -47,7 +47,7 @@ func FindRefWorker(c *fasthttp.Client, queue chan string, baseUrl, baseDir strin
 					queue <- utils.Url(".git", string(ref))
 					queue <- utils.Url(".git/logs", string(ref))
 				}
-				if path == ".git/config" {
+				if path == ".git/config" || path == ".git/FETCH_HEAD" {
 					// TODO check the actual origin instead of just assuming origin here
 					for _, branch := range branchRegex.FindAllSubmatch(content, -1) {
 						queue <- utils.Url(".git/refs/remotes/origin", string(branch[1]))
@@ -85,7 +85,7 @@ func FindRefWorker(c *fasthttp.Client, queue chan string, baseUrl, baseDir strin
 					queue <- utils.Url(".git", string(ref))
 					queue <- utils.Url(".git/logs", string(ref))
 				}
-				if path == ".git/config" {
+				if path == ".git/config" || path == ".git/FETCH_HEAD" {
 					// TODO check the actual origin instead of just assuming origin here
 					for _, branch := range branchRegex.FindAllSubmatch(body, -1) {
 						queue <- utils.Url(".git/refs/remotes/origin", string(branch[1]))

@@ -262,7 +262,6 @@ func FetchGit(baseUrl, baseDir string) error {
 
 				if strings.HasPrefix(path, refLogPrefix) {
 					refName := strings.TrimPrefix(path, refLogPrefix)
-					fmt.Println(refName)
 					filePath := utils.Url(gitRefsDir, refName)
 					if !utils.Exists(filePath) {
 						fmt.Println("[-] Generating ref file for", refName)

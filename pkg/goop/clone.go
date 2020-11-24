@@ -391,27 +391,54 @@ func FetchGit(baseUrl, baseDir string) error {
 			stdout := &bytes.Buffer{}
 			cmd.Stdout = stdout
 			err = cmd.Run()
-			if err != nil {
-				// ignore errors, this will likely error almost every time
-				return nil
-			}
-			out, err = ioutil.ReadAll(stdout)
-			if err != nil {
-				return err
-			}
-			deleted := statusRegex.FindAllSubmatch(out, -1)
-			queue = createQueue(len(deleted) * 3)
-			concurrency = utils.MinInt(maxConcurrency, len(deleted))
-			wg.Add(concurrency)
-			for w := 1; w <= concurrency; w++ {
-				go workers.DownloadWorker(c, queue, baseUrl, baseDir, &wg, true)
-			}
-			for _, e := range deleted {
-				if !bytes.HasSuffix(e[1], phpSuffix) {
-					queue <- string(e[1])
+			// ignore errors, this will likely error almost every time
+			if err == nil {
+				out, err = ioutil.ReadAll(stdout)
+				if err != nil {
+					return err
 				}
+				deleted := statusRegex.FindAllSubmatch(out, -1)
+				queue = createQueue(len(deleted) * 3)
+				concurrency = utils.MinInt(maxConcurrency, len(deleted))
+				wg.Add(concurrency)
+				for w := 1; w <= concurrency; w++ {
+					go workers.DownloadWorker(c, queue, baseUrl, baseDir, &wg, true)
+				}
+				for _, e := range deleted {
+					if !bytes.HasSuffix(e[1], phpSuffix) {
+						queue <- string(e[1])
+					}
+				}
+				waitForQueue(queue)
 			}
-			waitForQueue(queue)
+
+			// Iterate over index to find missing files
+			if utils.Exists(indexPath) {
+				f, err := os.Open(indexPath)
+				if err != nil {
+					return err
+				}
+				defer f.Close()
+				var idx index.Index
+				decoder := index.NewDecoder(f)
+				if err := decoder.Decode(&idx); err != nil {
+					fmt.Fprintf(os.Stderr, "error: %s\n", err)
+					//return err
+				}
+				queue = createQueue(len(idx.Entries) * 3)
+				concurrency = utils.MinInt(maxConcurrency, len(idx.Entries))
+				wg.Add(concurrency)
+				for w := 1; w <= concurrency; w++ {
+					go workers.DownloadWorker(c, queue, baseUrl, baseDir, &wg, true)
+				}
+				for _, entry := range idx.Entries {
+					if !strings.HasSuffix(entry.Name, ".php") && !utils.Exists(utils.Url(baseDir, entry.Name)) {
+						queue <- entry.Name
+					}
+				}
+				waitForQueue(queue)
+
+			}
 		} else {
 			return err
 		}

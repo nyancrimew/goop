@@ -17,6 +17,7 @@ func RecursiveDownloadWorker(c *fasthttp.Client, queue chan string, baseUrl, bas
 	for {
 		select {
 		case f := <-queue:
+			checkRatelimted()
 			if f == "" {
 				continue
 			}
@@ -32,6 +33,11 @@ func RecursiveDownloadWorker(c *fasthttp.Client, queue chan string, baseUrl, bas
 			fmt.Printf("[-] Fetching %s [%d]\n", uri, code)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "error: %s\n", err)
+				continue
+			}
+			if code == 429 {
+				setRatelimited()
+				queue <- f
 				continue
 			}
 			if isDir {

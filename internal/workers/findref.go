@@ -23,6 +23,7 @@ func FindRefWorker(c *fasthttp.Client, queue chan string, baseUrl, baseDir strin
 	for {
 		select {
 		case path := <-queue:
+			checkRatelimted()
 			if path == "" {
 				continue
 			}
@@ -91,6 +92,9 @@ func FindRefWorker(c *fasthttp.Client, queue chan string, baseUrl, baseDir strin
 						queue <- utils.Url(".git/refs/remotes/origin", string(branch[1]))
 					}
 				}
+			} else if code == 429 {
+				setRatelimited()
+				queue <- path
 			}
 		default:
 			// TODO: get rid of dirty hack somehow

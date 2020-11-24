@@ -2,7 +2,7 @@ package goop
 
 import "regexp"
 
-const maxConcurrency = 30
+const maxConcurrency = 60
 
 var refPrefix = []byte{'r', 'e', 'f', ':'}
 var phpSuffix = []byte{'.', 'p', 'h', 'p'}

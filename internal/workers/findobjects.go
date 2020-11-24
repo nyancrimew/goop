@@ -22,6 +22,7 @@ func FindObjectsWorker(c *fasthttp.Client, queue chan string, baseUrl, baseDir s
 	for {
 		select {
 		case obj := <-queue:
+			checkRatelimted()
 			if obj == "" {
 				continue
 			}
@@ -94,6 +95,9 @@ func FindObjectsWorker(c *fasthttp.Client, queue chan string, baseUrl, baseDir s
 				for _, h := range referencedHashes {
 					queue <- h
 				}
+			} else if code == 429 {
+				setRatelimited()
+				queue <- obj
 			}
 		default:
 			// TODO: get rid of dirty hack somehow

@@ -188,8 +188,7 @@ func FetchGit(baseUrl, baseDir string) error {
 	for _, f := range commonFiles {
 		queue <- f
 	}
-	close(queue)
-	wg.Wait()
+	waitForQueue(queue)
 
 	fmt.Println("[-] Finding refs")
 	queue = createQueue(100)
@@ -220,8 +219,7 @@ func FetchGit(baseUrl, baseDir string) error {
 			queue <- fmt.Sprintf(".git/objects/pack/pack-%s.idx", sha1[1])
 			queue <- fmt.Sprintf(".git/objects/pack/pack-%s.pack", sha1[1])
 		}
-		close(queue)
-		wg.Wait()
+		waitForQueue(queue)
 	}
 
 	fmt.Println("[-] Finding objects")
@@ -385,8 +383,7 @@ func FetchGit(baseUrl, baseDir string) error {
 					queue <- string(e[1])
 				}
 			}
-			close(queue)
-			wg.Wait()
+			waitForQueue(queue)
 
 			// Fetch files marked as missing in status
 			cmd := exec.Command("git", "status")
@@ -410,12 +407,11 @@ func FetchGit(baseUrl, baseDir string) error {
 				go workers.DownloadWorker(c, queue, baseUrl, baseDir, &wg, true)
 			}
 			for _, e := range deleted {
-				if!bytes.HasSuffix(e[1], phpSuffix) {
+				if !bytes.HasSuffix(e[1], phpSuffix) {
 					queue <- string(e[1])
 				}
 			}
-			close(queue)
-			wg.Wait()
+			waitForQueue(queue)
 		} else {
 			return err
 		}

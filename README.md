@@ -19,7 +19,7 @@ $ goop example.com
 ## Installation
 
 ```bash
-GO111MODULE=on go get -u github.com/deletescape/goop
+go install github.com/deletescape/goop@latest
 ```
 
 ## How does it work?

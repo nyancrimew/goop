@@ -27,7 +27,7 @@ func FindRefWorker(c *fasthttp.Client, baseUrl, baseDir string, jt *jobtracker.J
 			if !jt.HasWork() {
 				return
 			}
-			jobtracker.Nap()
+			jt.Nap()
 		}
 	}
 }

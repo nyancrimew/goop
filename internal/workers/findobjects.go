@@ -27,7 +27,7 @@ func FindObjectsWorker(c *fasthttp.Client, baseUrl, baseDir string, jt *jobtrack
 			if !jt.HasWork() {
 				return
 			}
-			jobtracker.Nap()
+			jt.Nap()
 		}
 	}
 }

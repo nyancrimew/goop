@@ -2,23 +2,23 @@ package jobtracker
 
 import (
 	"container/list"
+	"math"
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/deletescape/goop/internal/utils"
 )
 
 type JobTracker struct {
 	activeWorkers int32
 	queuedJobs    int32
+	naps          int32
 	didWork       bool
 	stop          bool
 	cond          *sync.Cond
 	Queue         chan string
 	send          chan string
-}
-
-func Nap() {
-	time.Sleep(40 * time.Millisecond)
 }
 
 func NewJobTracker() *JobTracker {
@@ -63,6 +63,12 @@ func (jt *JobTracker) AddJob(job string) {
 
 func (jt *JobTracker) StartWork() {
 	atomic.AddInt32(&jt.activeWorkers, 1)
+}
+
+func (jt *JobTracker) Nap() {
+	ratio := float64(atomic.AddInt32(&jt.naps, 1)) / float64(atomic.LoadInt32(&jt.activeWorkers))
+	n := utils.MaxInt(int(math.Ceil(ratio)), 1)
+	time.Sleep(time.Duration(n) * 10 * time.Millisecond)
 }
 
 func (jt *JobTracker) EndWork() {

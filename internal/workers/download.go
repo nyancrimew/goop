@@ -19,7 +19,7 @@ func DownloadWorker(c *fasthttp.Client, baseUrl, baseDir string, jt *jobtracker.
 			if !jt.HasWork() {
 				return
 			}
-			jobtracker.Nap()
+			jt.Nap()
 		}
 	}
 }

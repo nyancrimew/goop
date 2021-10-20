@@ -22,7 +22,7 @@ func RecursiveDownloadWorker(c *fasthttp.Client, baseUrl, baseDir string, jt *jo
 			if !jt.HasWork() {
 				return
 			}
-			jobtracker.Nap()
+			jt.Nap()
 		}
 	}
 }

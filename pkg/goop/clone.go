@@ -382,10 +382,12 @@ func FetchGit(baseUrl, baseDir string) error {
 			if err != nil {
 				return err
 			}
+			var missingFiles []string
 			errors := stdErrRegex.FindAllSubmatch(out, -1)
 			jt = jobtracker.NewJobTracker()
 			for _, e := range errors {
 				if !bytes.HasSuffix(e[1], phpSuffix) {
+					missingFiles = append(missingFiles, string(e[1]))
 					jt.AddJob(string(e[1]))
 				}
 			}
@@ -395,7 +397,7 @@ func FetchGit(baseUrl, baseDir string) error {
 			}
 			jt.Wait()
 
-			// Fetch files marked as missing in status
+			/*// Fetch files marked as missing in status
 			// TODO: why do we parse status AND decode index ???????
 			cmd := exec.Command("git", "status")
 			cmd.Dir = baseDir
@@ -420,7 +422,7 @@ func FetchGit(baseUrl, baseDir string) error {
 					go workers.DownloadWorker(c, baseUrl, baseDir, jt, true, true)
 				}
 				jt.Wait()
-			}
+			}*/
 
 			// Iterate over index to find missing files
 			if utils.Exists(indexPath) {
@@ -438,6 +440,7 @@ func FetchGit(baseUrl, baseDir string) error {
 				jt = jobtracker.NewJobTracker()
 				for _, entry := range idx.Entries {
 					if !strings.HasSuffix(entry.Name, ".php") && !utils.Exists(utils.Url(baseDir, entry.Name)) {
+						missingFiles = append(missingFiles, entry.Name)
 						jt.AddJob(entry.Name)
 					}
 				}
@@ -446,7 +449,31 @@ func FetchGit(baseUrl, baseDir string) error {
 					go workers.DownloadWorker(c, baseUrl, baseDir, jt, true, true)
 				}
 				jt.Wait()
+			}
 
+			// TODO: turn into worker?
+			for _, f := range missingFiles {
+				if utils.Exists(utils.Url(baseDir, f)) {
+					cmd := exec.Command("git", "hash-object", "-w", f)
+					cmd.Dir = baseDir
+					cmd.Stdout = nil
+					cmd.Stderr = nil
+					if err := cmd.Run(); err != nil {
+						log.Error().Str("file", f).Err(err).Msg("failed to hash object")
+						continue
+					}
+					log.Info().Str("file", f).Msg("hashed and stored object")
+
+					cmd = exec.Command("git", "checkout", f)
+					cmd.Dir = baseDir
+					cmd.Stdout = nil
+					cmd.Stderr = nil
+					if err := cmd.Run(); err != nil {
+						log.Error().Str("file", f).Err(err).Msg("failed to checkout file")
+						continue
+					}
+					log.Info().Str("file", f).Msg("checked out file")
+				}
 			}
 		} else {
 			return err

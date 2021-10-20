@@ -180,7 +180,7 @@ func FetchGit(baseUrl, baseDir string) error {
 			for w := 1; w <= maxConcurrency; w++ {
 				go workers.RecursiveDownloadWorker(c, baseUrl, baseDir, jt)
 			}
-			jt.Wait()
+			jt.StartAndWait()
 
 			log.Info().Str("dir", baseDir).Msg("running git checkout .")
 			cmd := exec.Command("git", "checkout", ".")
@@ -198,7 +198,7 @@ func FetchGit(baseUrl, baseDir string) error {
 	for w := 1; w <= concurrency; w++ {
 		go workers.DownloadWorker(c, baseUrl, baseDir, jt, false, false)
 	}
-	jt.Wait()
+	jt.StartAndWait()
 
 	jt = jobtracker.NewJobTracker()
 	log.Info().Str("base", baseUrl).Msg("finding refs")
@@ -208,7 +208,7 @@ func FetchGit(baseUrl, baseDir string) error {
 	for w := 1; w <= maxConcurrency; w++ {
 		go workers.FindRefWorker(c, baseUrl, baseDir, jt)
 	}
-	jt.Wait()
+	jt.StartAndWait()
 
 	log.Info().Str("base", baseUrl).Msg("finding packs")
 	infoPacksPath := utils.Url(baseDir, ".git/objects/info/packs")
@@ -227,7 +227,7 @@ func FetchGit(baseUrl, baseDir string) error {
 		for w := 1; w <= concurrency; w++ {
 			go workers.DownloadWorker(c, baseUrl, baseDir, jt, false, false)
 		}
-		jt.Wait()
+		jt.StartAndWait()
 	}
 
 	log.Info().Str("base", baseUrl).Msg("finding objects")
@@ -363,7 +363,7 @@ func FetchGit(baseUrl, baseDir string) error {
 	for w := 1; w <= maxConcurrency; w++ {
 		go workers.FindObjectsWorker(c, baseUrl, baseDir, jt, storage)
 	}
-	jt.Wait()
+	jt.StartAndWait()
 
 	// TODO: does this even make sense???????
 	if !utils.Exists(baseDir) {
@@ -395,7 +395,7 @@ func FetchGit(baseUrl, baseDir string) error {
 			for w := 1; w <= concurrency; w++ {
 				go workers.DownloadWorker(c, baseUrl, baseDir, jt, true, true)
 			}
-			jt.Wait()
+			jt.StartAndWait()
 
 			/*// Fetch files marked as missing in status
 			// TODO: why do we parse status AND decode index ???????
@@ -448,7 +448,7 @@ func FetchGit(baseUrl, baseDir string) error {
 				for w := 1; w <= concurrency; w++ {
 					go workers.DownloadWorker(c, baseUrl, baseDir, jt, true, true)
 				}
-				jt.Wait()
+				jt.StartAndWait()
 			}
 
 			// TODO: turn into worker?
@@ -510,7 +510,7 @@ func FetchGit(baseUrl, baseDir string) error {
 			for w := 1; w <= concurrency; w++ {
 				go workers.DownloadWorker(c, baseUrl, baseDir, jt, true, true)
 			}
-			jt.Wait()
+			jt.StartAndWait()
 		}
 	}
 	return nil

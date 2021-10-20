@@ -14,8 +14,7 @@ type JobTracker struct {
 	activeWorkers int32
 	queuedJobs    int32
 	naps          int32
-	didWork       bool
-	stop          bool
+	started       bool
 	cond          *sync.Cond
 	Queue         chan string
 	send          chan string
@@ -73,37 +72,26 @@ func (jt *JobTracker) Nap() {
 }
 
 func (jt *JobTracker) EndWork() {
-	jt.didWork = true
 	atomic.AddInt32(&jt.activeWorkers, -1)
 	atomic.AddInt32(&jt.queuedJobs, -1)
 }
 
 func (jt *JobTracker) HasWork() bool {
-	hasWork := !jt.stop && (!jt.didWork || (atomic.LoadInt32(&jt.queuedJobs) > 0 && atomic.LoadInt32(&jt.activeWorkers) > 0))
-
+	hasWork := !jt.started || atomic.LoadInt32(&jt.queuedJobs) > 0 || atomic.LoadInt32(&jt.activeWorkers) > 0
 	if !hasWork {
 		jt.cond.Broadcast()
 	}
 	return hasWork
 }
 
-func (jt *JobTracker) KillIfNoJobs() bool {
-	if atomic.LoadInt32(&jt.queuedJobs) == 0 {
-		jt.stop = true
-		return true
-	}
-	return false
-}
-
 func (jt *JobTracker) QueuedJobs() int32 {
 	return atomic.LoadInt32(&jt.queuedJobs)
 }
 
-func (jt *JobTracker) Wait() {
-	if !jt.KillIfNoJobs() {
-		jt.cond.L.Lock()
-		for jt.HasWork() {
-			jt.cond.Wait()
-		}
+func (jt *JobTracker) StartAndWait() {
+	jt.started = true
+	jt.cond.L.Lock()
+	for jt.HasWork() {
+		jt.cond.Wait()
 	}
 }

@@ -223,7 +223,7 @@ func FetchGit(baseUrl, baseDir string) error {
 			jt.AddJob(fmt.Sprintf(".git/objects/pack/pack-%s.idx", sha1[1]))
 			jt.AddJob(fmt.Sprintf(".git/objects/pack/pack-%s.pack", sha1[1]))
 		}
-		concurrency := utils.MinInt(maxConcurrency, len(hashes))
+		concurrency := utils.MinInt(maxConcurrency, int(jt.QueuedJobs()))
 		for w := 1; w <= concurrency; w++ {
 			go workers.DownloadWorker(c, baseUrl, baseDir, jt, false, false)
 		}
@@ -391,7 +391,7 @@ func FetchGit(baseUrl, baseDir string) error {
 					jt.AddJob(string(e[1]))
 				}
 			}
-			concurrency := utils.MinInt(maxConcurrency, len(errors))
+			concurrency := utils.MinInt(maxConcurrency, int(jt.QueuedJobs()))
 			for w := 1; w <= concurrency; w++ {
 				go workers.DownloadWorker(c, baseUrl, baseDir, jt, true, true)
 			}
@@ -417,7 +417,7 @@ func FetchGit(baseUrl, baseDir string) error {
 						jt.AddJob(string(e[1]))
 					}
 				}
-				concurrency = utils.MinInt(maxConcurrency, len(deleted))
+				concurrency = utils.MinInt(maxConcurrency, int(jt.QueuedJobs()))
 				for w := 1; w <= concurrency; w++ {
 					go workers.DownloadWorker(c, baseUrl, baseDir, jt, true, true)
 				}
@@ -444,7 +444,7 @@ func FetchGit(baseUrl, baseDir string) error {
 						jt.AddJob(entry.Name)
 					}
 				}
-				concurrency = utils.MinInt(maxConcurrency, len(idx.Entries))
+				concurrency = utils.MinInt(maxConcurrency, int(jt.QueuedJobs()))
 				for w := 1; w <= concurrency; w++ {
 					go workers.DownloadWorker(c, baseUrl, baseDir, jt, true, true)
 				}

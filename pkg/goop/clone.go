@@ -324,6 +324,7 @@ func FetchGit(baseUrl, baseDir string) error {
 		storage.IterEncodedObjects()
 	}*/
 
+	jt = jobtracker.NewJobTracker()
 	log.Info().Str("base", baseUrl).Msg("fetching object")
 	for obj := range objs {
 		jt.AddJob(obj)

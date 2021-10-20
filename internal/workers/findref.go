@@ -49,6 +49,7 @@ func findRefWork(c *fasthttp.Client, baseUrl, baseDir, path string, jt *jobtrack
 	} else {
 		checkedRefs[path] = true
 	}
+	checkedRefsMutex.Unlock()
 
 	targetFile := utils.Url(baseDir, path)
 	if utils.Exists(targetFile) {

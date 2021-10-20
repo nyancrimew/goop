@@ -1,6 +1,7 @@
 package jobtracker
 
 import (
+	"container/list"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -12,6 +13,7 @@ type JobTracker struct {
 	didWork       bool
 	cond          *sync.Cond
 	Queue         chan string
+	send          chan string
 }
 
 func Nap() {
@@ -19,18 +21,43 @@ func Nap() {
 }
 
 func NewJobTracker() *JobTracker {
-	return &JobTracker{
+	jt := &JobTracker{
 		cond:  sync.NewCond(&sync.Mutex{}),
-		Queue: make(chan string, 999999), // TODO: dont create oversized queues, we should try to save memory; maybe read the channel docs again
+		Queue: make(chan string, 1),
+		send:  make(chan string, 1),
+	}
+	go jt.manageQueue()
+	return jt
+}
+
+func (jt *JobTracker) manageQueue() {
+	defer close(jt.Queue)
+	defer close(jt.send)
+
+	queue := list.New()
+	for jt.HasWork() {
+		if front := queue.Front(); front == nil {
+			value, ok := <-jt.send
+			if ok {
+				queue.PushBack(value)
+			}
+		} else {
+			select {
+			case jt.Queue <- front.Value.(string):
+				queue.Remove(front)
+			case value, ok := <-jt.send:
+				if ok {
+					queue.PushBack(value)
+				}
+			}
+		}
 	}
 }
 
 func (jt *JobTracker) AddJob(job string) {
 	// TODO: can we discard empty jobs here?
-	jt.cond.L.Lock()
 	atomic.AddInt32(&jt.queuedJobs, 1)
-	jt.Queue <- job
-	jt.cond.L.Unlock()
+	jt.send <- job
 }
 
 func (jt *JobTracker) StartWork() {
@@ -59,8 +86,6 @@ func (jt *JobTracker) QueuedJobs() int32 {
 }
 
 func (jt *JobTracker) Wait() {
-	defer close(jt.Queue)
-
 	jt.cond.L.Lock()
 	for jt.HasWork() {
 		jt.cond.Wait()

@@ -32,10 +32,6 @@ func recursiveDownload(c *fasthttp.Client, baseUrl, baseDir, f string, jt *jobtr
 	jt.StartWork()
 	defer jt.EndWork()
 
-	if f == "" {
-		return
-	}
-
 	checkRatelimted()
 
 	filePath := utils.Url(baseDir, f)

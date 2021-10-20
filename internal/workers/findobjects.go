@@ -36,10 +36,6 @@ func findObjWork(c *fasthttp.Client, baseUrl, baseDir, obj string, jt *jobtracke
 	jt.StartWork()
 	defer jt.EndWork()
 
-	if obj == "" {
-		return
-	}
-
 	checkRatelimted()
 
 	checkedObjsMutex.Lock()

@@ -55,7 +55,9 @@ func (jt *JobTracker) manageQueue() {
 }
 
 func (jt *JobTracker) AddJob(job string) {
-	// TODO: can we discard empty jobs here?
+	if job == "" {
+		return
+	}
 	atomic.AddInt32(&jt.queuedJobs, 1)
 	jt.send <- job
 }

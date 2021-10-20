@@ -36,10 +36,7 @@ func findRefWork(c *fasthttp.Client, baseUrl, baseDir, path string, jt *jobtrack
 	jt.StartWork()
 	defer jt.EndWork()
 
-	// TODO: do we still need this check here?
-	if path == "" {
-		return
-	}
+	checkRatelimted()
 
 	checkedRefsMutex.Lock()
 	if checked, ok := checkedRefs[path]; checked && ok {

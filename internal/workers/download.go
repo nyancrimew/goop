@@ -28,9 +28,6 @@ func downloadWork(c *fasthttp.Client, baseUrl, baseDir, file string, jt *jobtrac
 	jt.StartWork()
 	defer jt.EndWork()
 
-	if file == "" {
-		return
-	}
 	checkRatelimted()
 
 	targetFile := utils.Url(baseDir, file)

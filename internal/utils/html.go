@@ -2,9 +2,10 @@ package utils
 
 import (
 	"bytes"
-	"github.com/PuerkitoBio/goquery"
 	"net/url"
 	"strings"
+
+	"github.com/PuerkitoBio/goquery"
 )
 
 var htmlTag = []byte{'<', 'h', 't', 'm', 'l'}
@@ -36,5 +37,5 @@ func GetIndexedFiles(body []byte) ([]string, error) {
 		}
 		return true
 	})
-	return files, err
+	return files, exitErr
 }

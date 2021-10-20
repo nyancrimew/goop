@@ -54,6 +54,10 @@ func (jt *JobTracker) HasWork() bool {
 	return hasWork
 }
 
+func (jt *JobTracker) QueuedJobs() int32 {
+	return atomic.LoadInt32(&jt.queuedJobs)
+}
+
 func (jt *JobTracker) Wait() {
 	defer close(jt.Queue)
 

@@ -418,6 +418,40 @@ func FetchGit(baseUrl, baseDir string) error {
 		} else {
 			return err
 		}
+
+		ignorePath := utils.Url(baseDir, ".gitignore")
+		if utils.Exists(ignorePath) {
+			log.Info().Str("base", baseDir).Msg("atempting to fetch ignored files")
+
+			ignoreFile, err := os.Open(ignorePath)
+			if err != nil {
+				return err
+			}
+			defer ignoreFile.Close()
+
+			jt = jobtracker.NewJobTracker()
+
+			scanner := bufio.NewScanner(ignoreFile)
+			for scanner.Scan() {
+				line := strings.TrimSpace(scanner.Text())
+				commentStrip := strings.SplitN(line, "#", 1)
+				line = commentStrip[0]
+				if line == "" || strings.HasPrefix(line, "!") || strings.HasSuffix(line, "/") || strings.ContainsRune(line, '*') || strings.HasSuffix(line, ".php") {
+					continue
+				}
+				jt.AddJob(line)
+			}
+
+			if err := scanner.Err(); err != nil {
+				return err
+			}
+
+			concurrency = utils.MinInt(maxConcurrency, int(jt.QueuedJobs()))
+			for w := 1; w <= concurrency; w++ {
+				go workers.DownloadWorker(c, baseUrl, baseDir, jt, true, true)
+			}
+			jt.Wait()
+		}
 	}
 	return nil
 }

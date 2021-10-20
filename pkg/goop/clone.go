@@ -25,9 +25,38 @@ import (
 	"github.com/go-git/go-git/v5/storage/filesystem/dotgit"
 	"github.com/phuslu/log"
 	"github.com/valyala/fasthttp"
+	"github.com/valyala/fasthttp/fasthttpproxy"
 )
 
-// TODO: support proxy environment variables
+func proxyFromEnv() fasthttp.DialFunc {
+	allProxy, okAll := os.LookupEnv("all_proxy")
+	httpProxy, okHttp := os.LookupEnv("http_proxy")
+	httpsProxy, okHttps := os.LookupEnv("https_proxy")
+
+	uriToDial := func(u string) fasthttp.DialFunc {
+		pUri, err := url.Parse(u)
+		if err != nil {
+			panic(err) // TODO: uh, handle better
+		}
+		if pUri.Scheme == "socks5" {
+			return fasthttpproxy.FasthttpSocksDialer(pUri.Host)
+		}
+		return fasthttpproxy.FasthttpHTTPDialer(pUri.Host) // this probly doesnt work for proxys with auth rn
+	}
+
+	if okAll {
+		return uriToDial(allProxy)
+	}
+	if okHttp {
+		return uriToDial(httpProxy)
+	}
+	if okHttps {
+		return uriToDial(httpsProxy)
+	}
+
+	return nil
+}
+
 var c = &fasthttp.Client{
 	Name:            "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/85.0.4183.102 Safari/537.36",
 	MaxConnsPerHost: utils.MaxInt(maxConcurrency+250, fasthttp.DefaultMaxConnsPerHost),
@@ -36,6 +65,7 @@ var c = &fasthttp.Client{
 	},
 	NoDefaultUserAgentHeader: true,
 	MaxConnWaitTimeout:       10 * time.Second,
+	Dial:                     proxyFromEnv(),
 }
 
 func CloneList(listFile, baseDir string, force, keep bool) error {

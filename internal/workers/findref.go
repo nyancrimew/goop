@@ -1,15 +1,18 @@
 package workers
 
 import (
+	"fmt"
 	"io/ioutil"
 	"os"
 	"regexp"
+	"strings"
 	"sync"
 
 	"github.com/deletescape/goop/internal/jobtracker"
 	"github.com/deletescape/goop/internal/utils"
 	"github.com/phuslu/log"
 	"github.com/valyala/fasthttp"
+	"gopkg.in/ini.v1"
 )
 
 var refRegex = regexp.MustCompile(`(?m)(refs(/[a-zA-Z0-9\-\.\_\*]+)+)`)
@@ -54,16 +57,34 @@ func findRefWork(c *fasthttp.Client, baseUrl, baseDir, path string, jt *jobtrack
 		content, err := ioutil.ReadFile(targetFile)
 		if err != nil {
 			log.Error().Str("file", targetFile).Err(err).Msg("error while reading file")
+			return
 		}
 		for _, ref := range refRegex.FindAll(content, -1) {
 			jt.AddJob(utils.Url(".git", string(ref)))
 			jt.AddJob(utils.Url(".git/logs", string(ref)))
 		}
-		if path == ".git/config" || path == ".git/FETCH_HEAD" {
-			// TODO check the actual origin instead of just assuming origin here
+		if path == ".git/FETCH_HEAD" {
+			// TODO figure out actual remote instead of just assuming origin here (if possible)
 			for _, branch := range branchRegex.FindAllSubmatch(content, -1) {
-				jt.AddJob(utils.Url(".git/refs/remotes/origin", string(branch[1])))
-				jt.AddJob(utils.Url(".git/logs/refs/remotes/origin", string(branch[1])))
+				jt.AddJob(fmt.Sprintf(".git/refs/remotes/origin/%s", branch[1]))
+				jt.AddJob(fmt.Sprintf(".git/logs/refs/remotes/origin/%s", branch[1]))
+			}
+		}
+		if path == ".git/config" {
+			cfg, err := ini.Load(content)
+			if err != nil {
+				log.Error().Str("file", targetFile).Err(err).Msg("failed to parse git config")
+				return
+			}
+			for _, sec := range cfg.Sections() {
+				if strings.HasPrefix(sec.Name(), "branch ") {
+					parts := strings.SplitN(sec.Name(), " ", 2)
+					branch := strings.Trim(parts[1], `"`)
+					remote := sec.Key("remote").String()
+
+					jt.AddJob(fmt.Sprintf(".git/refs/remotes/%s/%s", remote, branch))
+					jt.AddJob(fmt.Sprintf(".git/logs/refs/remotes/%s/%s", remote, branch))
+				}
 			}
 		}
 		return
@@ -107,11 +128,28 @@ func findRefWork(c *fasthttp.Client, baseUrl, baseDir, path string, jt *jobtrack
 		jt.AddJob(utils.Url(".git", string(ref)))
 		jt.AddJob(utils.Url(".git/logs", string(ref)))
 	}
-	if path == ".git/config" || path == ".git/FETCH_HEAD" {
-		// TODO check the actual origin instead of just assuming origin here
+	if path == ".git/FETCH_HEAD" {
+		// TODO figure out actual remote instead of just assuming origin here (if possible)
 		for _, branch := range branchRegex.FindAllSubmatch(body, -1) {
-			jt.AddJob(utils.Url(".git/refs/remotes/origin", string(branch[1])))
-			jt.AddJob(utils.Url(".git/logs/refs/remotes/origin", string(branch[1])))
+			jt.AddJob(fmt.Sprintf(".git/refs/remotes/origin/%s", branch[1]))
+			jt.AddJob(fmt.Sprintf(".git/logs/refs/remotes/origin/%s", branch[1]))
+		}
+	}
+	if path == ".git/config" {
+		cfg, err := ini.Load(body)
+		if err != nil {
+			log.Error().Str("file", targetFile).Err(err).Msg("failed to parse git config")
+			return
+		}
+		for _, sec := range cfg.Sections() {
+			if strings.HasPrefix(sec.Name(), "branch ") {
+				parts := strings.SplitN(sec.Name(), " ", 2)
+				branch := strings.Trim(parts[1], `"`)
+				remote := sec.Key("remote").String()
+
+				jt.AddJob(fmt.Sprintf(".git/refs/remotes/%s/%s", remote, branch))
+				jt.AddJob(fmt.Sprintf(".git/logs/refs/remotes/%s/%s", remote, branch))
+			}
 		}
 	}
 }

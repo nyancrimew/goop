@@ -14,7 +14,7 @@ func IsHtml(body []byte) bool {
 	return bytes.Contains(body, htmlTag)
 }
 
-func GetIndexedFiles(body []byte) ([]string, error) {
+func GetIndexedFiles(body []byte, basePath string) ([]string, error) {
 	doc, err := goquery.NewDocumentFromReader(bytes.NewReader(body))
 	if err != nil {
 		return nil, err
@@ -27,13 +27,15 @@ func GetIndexedFiles(body []byte) ([]string, error) {
 			exitErr = err
 			return false
 		}
-		if lnk.Path != "" &&
-			lnk.Path != "." &&
-			lnk.Path != ".." &&
-			!strings.HasPrefix(lnk.Path, "/") &&
+		path := strings.TrimPrefix(lnk.Path, basePath)
+		if path != "" &&
+			path != "." &&
+			path != "./" &&
+			!strings.HasPrefix(path, "..") &&
+			!strings.HasPrefix(path, "/") &&
 			lnk.Scheme == "" &&
 			lnk.Host == "" {
-			files = append(files, lnk.Path)
+			files = append(files, path)
 		}
 		return true
 	})

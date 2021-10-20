@@ -135,7 +135,8 @@ func FetchGit(baseUrl, baseDir string) error {
 	}
 
 	if code == 200 && utils.IsHtml(body) {
-		indexedFiles, err := utils.GetIndexedFiles(body)
+		lnk, _ := url.Parse(utils.Url(baseUrl, ".git/"))
+		indexedFiles, err := utils.GetIndexedFiles(body, lnk.Path)
 		if err != nil {
 			return err
 		}

@@ -2,6 +2,7 @@ package workers
 
 import (
 	"io/ioutil"
+	"net/url"
 	"os"
 	"strings"
 
@@ -64,7 +65,8 @@ func recursiveDownload(c *fasthttp.Client, baseUrl, baseDir, f string, jt *jobtr
 			return
 		}
 
-		indexedFiles, err := utils.GetIndexedFiles(body)
+		lnk, _ := url.Parse(uri)
+		indexedFiles, err := utils.GetIndexedFiles(body, lnk.Path)
 		if err != nil {
 			log.Error().Str("uri", uri).Err(err).Msg("couldn't get list of indexed files")
 			return

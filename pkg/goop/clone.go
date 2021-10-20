@@ -142,12 +142,12 @@ func FetchGit(baseUrl, baseDir string) error {
 		if utils.StringsContain(indexedFiles, "HEAD") {
 			log.Info().Str("base", baseUrl).Msg("fetching .git/ recursively")
 			jt := jobtracker.NewJobTracker()
-			for w := 1; w <= maxConcurrency; w++ {
-				go workers.RecursiveDownloadWorker(c, baseUrl, baseDir, jt)
-			}
 			for _, f := range indexedFiles {
 				// TODO: add support for non top level git repos
 				jt.AddJob(utils.Url(".git", f))
+			}
+			for w := 1; w <= maxConcurrency; w++ {
+				go workers.RecursiveDownloadWorker(c, baseUrl, baseDir, jt)
 			}
 			jt.Wait()
 
@@ -160,21 +160,21 @@ func FetchGit(baseUrl, baseDir string) error {
 
 	log.Info().Str("base", baseUrl).Msg("fetching common files")
 	jt := jobtracker.NewJobTracker()
+	for _, f := range commonFiles {
+		jt.AddJob(f)
+	}
 	concurrency := utils.MinInt(maxConcurrency, len(commonFiles))
 	for w := 1; w <= concurrency; w++ {
 		go workers.DownloadWorker(c, baseUrl, baseDir, jt, false, false)
 	}
-	for _, f := range commonFiles {
-		jt.AddJob(f)
-	}
 	jt.Wait()
 
 	log.Info().Str("base", baseUrl).Msg("finding refs")
-	for w := 1; w <= maxConcurrency; w++ {
-		go workers.FindRefWorker(c, baseUrl, baseDir, jt)
-	}
 	for _, ref := range commonRefs {
 		jt.AddJob(ref)
+	}
+	for w := 1; w <= maxConcurrency; w++ {
+		go workers.FindRefWorker(c, baseUrl, baseDir, jt)
 	}
 	jt.Wait()
 
@@ -187,13 +187,13 @@ func FetchGit(baseUrl, baseDir string) error {
 		}
 		hashes := packRegex.FindAllSubmatch(infoPacks, -1)
 		jt = jobtracker.NewJobTracker()
-		concurrency := utils.MinInt(maxConcurrency, len(hashes))
-		for w := 1; w <= concurrency; w++ {
-			go workers.DownloadWorker(c, baseUrl, baseDir, jt, false, false)
-		}
 		for _, sha1 := range hashes {
 			jt.AddJob(fmt.Sprintf(".git/objects/pack/pack-%s.idx", sha1[1]))
 			jt.AddJob(fmt.Sprintf(".git/objects/pack/pack-%s.pack", sha1[1]))
+		}
+		concurrency := utils.MinInt(maxConcurrency, len(hashes))
+		for w := 1; w <= concurrency; w++ {
+			go workers.DownloadWorker(c, baseUrl, baseDir, jt, false, false)
 		}
 		jt.Wait()
 	}
@@ -324,11 +324,11 @@ func FetchGit(baseUrl, baseDir string) error {
 	}*/
 
 	log.Info().Str("base", baseUrl).Msg("fetching object")
-	for w := 1; w <= maxConcurrency; w++ {
-		go workers.FindObjectsWorker(c, baseUrl, baseDir, jt, storage)
-	}
 	for obj := range objs {
 		jt.AddJob(obj)
+	}
+	for w := 1; w <= maxConcurrency; w++ {
+		go workers.FindObjectsWorker(c, baseUrl, baseDir, jt, storage)
 	}
 	jt.Wait()
 
@@ -351,14 +351,14 @@ func FetchGit(baseUrl, baseDir string) error {
 			}
 			errors := stdErrRegex.FindAllSubmatch(out, -1)
 			jt = jobtracker.NewJobTracker()
-			concurrency := utils.MinInt(maxConcurrency, len(errors))
-			for w := 1; w <= concurrency; w++ {
-				go workers.DownloadWorker(c, baseUrl, baseDir, jt, true, true)
-			}
 			for _, e := range errors {
 				if !bytes.HasSuffix(e[1], phpSuffix) {
 					jt.AddJob(string(e[1]))
 				}
+			}
+			concurrency := utils.MinInt(maxConcurrency, len(errors))
+			for w := 1; w <= concurrency; w++ {
+				go workers.DownloadWorker(c, baseUrl, baseDir, jt, true, true)
 			}
 			jt.Wait()
 
@@ -376,15 +376,15 @@ func FetchGit(baseUrl, baseDir string) error {
 					return err
 				}
 				deleted := statusRegex.FindAllSubmatch(out, -1)
-				concurrency = utils.MinInt(maxConcurrency, len(deleted))
 				jt = jobtracker.NewJobTracker()
-				for w := 1; w <= concurrency; w++ {
-					go workers.DownloadWorker(c, baseUrl, baseDir, jt, true, true)
-				}
 				for _, e := range deleted {
 					if !bytes.HasSuffix(e[1], phpSuffix) {
 						jt.AddJob(string(e[1]))
 					}
+				}
+				concurrency = utils.MinInt(maxConcurrency, len(deleted))
+				for w := 1; w <= concurrency; w++ {
+					go workers.DownloadWorker(c, baseUrl, baseDir, jt, true, true)
 				}
 				jt.Wait()
 			}
@@ -402,15 +402,15 @@ func FetchGit(baseUrl, baseDir string) error {
 					fmt.Fprintf(os.Stderr, "error: %s\n", err)
 					//return err
 				}
-				concurrency = utils.MinInt(maxConcurrency, len(idx.Entries))
 				jt = jobtracker.NewJobTracker()
-				for w := 1; w <= concurrency; w++ {
-					go workers.DownloadWorker(c, baseUrl, baseDir, jt, true, true)
-				}
 				for _, entry := range idx.Entries {
 					if !strings.HasSuffix(entry.Name, ".php") && !utils.Exists(utils.Url(baseDir, entry.Name)) {
 						jt.AddJob(entry.Name)
 					}
+				}
+				concurrency = utils.MinInt(maxConcurrency, len(idx.Entries))
+				for w := 1; w <= concurrency; w++ {
+					go workers.DownloadWorker(c, baseUrl, baseDir, jt, true, true)
 				}
 				jt.Wait()
 

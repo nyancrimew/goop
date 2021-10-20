@@ -169,6 +169,7 @@ func FetchGit(baseUrl, baseDir string) error {
 	}
 	jt.Wait()
 
+	jt = jobtracker.NewJobTracker()
 	log.Info().Str("base", baseUrl).Msg("finding refs")
 	for _, ref := range commonRefs {
 		jt.AddJob(ref)

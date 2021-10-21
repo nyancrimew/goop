@@ -1,6 +1,6 @@
 # goop
 
-Yet another tool to dump a git repository from a website. Original codebase heavily inspired by [arthaud/git-dumper](https://github.com/arthaud/git-dumper).
+Yet another tool to dump a git repository from a website. goop tries to focus on as-complete-as-possible dumps and handling as many edge-cases as possible, compared to other tools, which seem to focus on bare minimum dumps. Original codebase heavily inspired by [arthaud/git-dumper](https://github.com/arthaud/git-dumper).
 
 ## Usage
 ```bash
@@ -36,4 +36,5 @@ If directory listing is not available, it will use several methods to find as ma
 * Fetch all objects recursively, analyzing each commits to find their parents;
 * Run `git checkout .` to recover the current working tree;
 * Attempt to fetch missing files listed in the git index;
+* Attempt to create objects for manually fetched files;
 * Attempt to fetch files listed in .gitignore

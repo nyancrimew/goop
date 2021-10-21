@@ -32,27 +32,31 @@ func createObjWork(baseDir, f string, jt *jobtracker.JobTracker, storage *filesy
 
 	fp := utils.Url(baseDir, f)
 
-	if idx != nil {
-		entry, err := idx.Entry(f)
-		if err != nil {
-			log.Error().Str("file", f).Err(err).Msg("file is not in index")
-			return
-		}
-
-		fMode, err := entry.Mode.ToOSFileMode()
-		if err != nil {
-			log.Warn().Str("file", f).Err(err).Msg("failed to set filemode")
-		} else {
-			os.Chmod(fp, fMode)
-		}
-		os.Chown(fp, int(entry.UID), int(entry.GID))
-		os.Chtimes(fp, entry.ModifiedAt, entry.ModifiedAt)
-		//log.Info().Str("file", f).Msg("updated from index")
+	entry, err := idx.Entry(f)
+	if err != nil {
+		log.Error().Str("file", f).Err(err).Msg("file is not in index")
+		return
 	}
+
+	fMode, err := entry.Mode.ToOSFileMode()
+	if err != nil {
+		log.Warn().Str("file", f).Err(err).Msg("failed to set filemode")
+	} else {
+		os.Chmod(fp, fMode)
+	}
+	os.Chown(fp, int(entry.UID), int(entry.GID))
+	os.Chtimes(fp, entry.ModifiedAt, entry.ModifiedAt)
+	//log.Info().Str("file", f).Msg("updated from index")
 
 	content, err := ioutil.ReadFile(fp)
 	if err != nil {
 		log.Error().Str("file", f).Err(err).Msg("failed to read file")
+		return
+	}
+
+	hash := plumbing.ComputeHash(plumbing.BlobObject, content)
+	if entry.Hash != hash {
+		log.Warn().Str("file", f).Msg("hash does not match hash in index, skipping object creation")
 		return
 	}
 

@@ -365,20 +365,20 @@ func FetchGit(baseUrl, baseDir string) error {
 	}
 	jt.StartAndWait()
 
-	// TODO: does this even make sense???????
 	if !utils.Exists(baseDir) {
 		return nil
 	}
 
+	// TODO: try to do using go-git
 	log.Info().Str("dir", baseDir).Msg("running git checkout .")
 	cmd := exec.Command("git", "checkout", ".")
 	cmd.Dir = baseDir
-	stderr := &bytes.Buffer{}
-	cmd.Stderr = stderr
+	//stderr := &bytes.Buffer{}
+	//cmd.Stderr = stderr
 	if err := cmd.Run(); err != nil {
 		if exErr, ok := err.(*exec.ExitError); ok && (exErr.ProcessState.ExitCode() == 255 || exErr.ProcessState.ExitCode() == 128) {
 			log.Info().Str("base", baseUrl).Str("dir", baseDir).Msg("attempting to fetch missing files")
-			out, err := ioutil.ReadAll(stderr)
+			/*out, err := ioutil.ReadAll(stderr)
 			if err != nil {
 				return err
 			}
@@ -397,7 +397,7 @@ func FetchGit(baseUrl, baseDir string) error {
 			}
 			jt.StartAndWait()
 
-			/*// Fetch files marked as missing in status
+			// Fetch files marked as missing in status
 			// TODO: why do we parse status AND decode index ???????
 			cmd := exec.Command("git", "status")
 			cmd.Dir = baseDir
@@ -425,9 +425,9 @@ func FetchGit(baseUrl, baseDir string) error {
 			}*/
 
 			// Iterate over index to find missing files
-			var idx index.Index
-			var hasIndex bool
 			if utils.Exists(indexPath) {
+				var missingFiles []string
+				var idx index.Index
 				f, err := os.Open(indexPath)
 				if err != nil {
 					return err
@@ -435,40 +435,36 @@ func FetchGit(baseUrl, baseDir string) error {
 				defer f.Close()
 				decoder := index.NewDecoder(f)
 				if err := decoder.Decode(&idx); err != nil {
-					fmt.Fprintf(os.Stderr, "error: %s\n", err)
+					log.Error().Err(err).Msg("failed to decode index")
 					//return err
 				} else {
-					hasIndex = true
-				}
-				jt = jobtracker.NewJobTracker()
-				for _, entry := range idx.Entries {
-					if !strings.HasSuffix(entry.Name, ".php") && !utils.Exists(utils.Url(baseDir, entry.Name)) {
-						missingFiles = append(missingFiles, entry.Name)
-						jt.AddJob(entry.Name)
+					jt = jobtracker.NewJobTracker()
+					for _, entry := range idx.Entries {
+						if !strings.HasSuffix(entry.Name, ".php") && !utils.Exists(utils.Url(baseDir, entry.Name)) {
+							missingFiles = append(missingFiles, entry.Name)
+							jt.AddJob(entry.Name)
+						}
 					}
-				}
-				concurrency = utils.MinInt(maxConcurrency, int(jt.QueuedJobs()))
-				for w := 1; w <= concurrency; w++ {
-					go workers.DownloadWorker(c, baseUrl, baseDir, jt, true, true)
-				}
-				jt.StartAndWait()
-			}
+					concurrency = utils.MinInt(maxConcurrency, int(jt.QueuedJobs()))
+					for w := 1; w <= concurrency; w++ {
+						go workers.DownloadWorker(c, baseUrl, baseDir, jt, true, true)
+					}
+					jt.StartAndWait()
 
-			jt = jobtracker.NewJobTracker()
-			for _, f := range missingFiles {
-				if utils.Exists(utils.Url(baseDir, f)) {
-					jt.AddJob(f)
+					//
+					jt = jobtracker.NewJobTracker()
+					for _, f := range missingFiles {
+						if utils.Exists(utils.Url(baseDir, f)) {
+							jt.AddJob(f)
+						}
+					}
+					concurrency = utils.MinInt(maxConcurrency, int(jt.QueuedJobs()))
+					for w := 1; w <= concurrency; w++ {
+						go workers.CreateObjectWorker(baseDir, jt, storage, &idx)
+					}
+					jt.StartAndWait()
 				}
 			}
-			concurrency = utils.MinInt(maxConcurrency, int(jt.QueuedJobs()))
-			var idp *index.Index
-			if hasIndex {
-				idp = &idx
-			}
-			for w := 1; w <= concurrency; w++ {
-				go workers.CreateObjectWorker(baseDir, jt, storage, idp)
-			}
-			jt.StartAndWait()
 		} else {
 			return err
 		}

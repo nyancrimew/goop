@@ -38,6 +38,10 @@ func findObjWork(c *fasthttp.Client, baseUrl, baseDir, obj string, jt *jobtracke
 
 	checkRatelimted()
 
+	if obj == "" {
+		return
+	}
+
 	checkedObjsMutex.Lock()
 	if checked, ok := checkedObjs[obj]; checked && ok {
 		// Obj has already been checked

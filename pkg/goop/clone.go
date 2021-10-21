@@ -425,17 +425,20 @@ func FetchGit(baseUrl, baseDir string) error {
 			}*/
 
 			// Iterate over index to find missing files
+			var idx index.Index
+			var hasIndex bool
 			if utils.Exists(indexPath) {
 				f, err := os.Open(indexPath)
 				if err != nil {
 					return err
 				}
 				defer f.Close()
-				var idx index.Index
 				decoder := index.NewDecoder(f)
 				if err := decoder.Decode(&idx); err != nil {
 					fmt.Fprintf(os.Stderr, "error: %s\n", err)
 					//return err
+				} else {
+					hasIndex = true
 				}
 				jt = jobtracker.NewJobTracker()
 				for _, entry := range idx.Entries {
@@ -451,47 +454,21 @@ func FetchGit(baseUrl, baseDir string) error {
 				jt.StartAndWait()
 			}
 
-			// TODO: turn into worker?
+			jt = jobtracker.NewJobTracker()
 			for _, f := range missingFiles {
-				fp := utils.Url(baseDir, f)
-				if utils.Exists(fp) {
-					content, err := ioutil.ReadFile(fp)
-					if err != nil {
-						log.Error().Str("file", f).Err(err).Msg("failed to read file")
-						continue
-					}
-
-					obj := storage.NewEncodedObject()
-					obj.SetSize(int64(len(content)))
-					obj.SetType(plumbing.BlobObject)
-
-					ow, err := obj.Writer()
-					if err != nil {
-						log.Error().Str("file", f).Err(err).Msg("failed to create object writer")
-						continue
-					}
-
-					ow.Write(content)
-					ow.Close()
-
-					_, err = storage.SetEncodedObject(obj)
-					if err != nil {
-						log.Error().Str("file", f).Err(err).Msg("failed to create object")
-						continue
-					}
-					log.Info().Str("file", f).Msg("object created")
-
-					cmd = exec.Command("git", "checkout", f)
-					cmd.Dir = baseDir
-					cmd.Stdout = nil
-					cmd.Stderr = nil
-					if err := cmd.Run(); err != nil {
-						log.Error().Str("file", f).Err(err).Msg("failed to checkout")
-						continue
-					}
-					log.Info().Str("file", f).Msg("checked out")
+				if utils.Exists(utils.Url(baseDir, f)) {
+					jt.AddJob(f)
 				}
 			}
+			concurrency = utils.MinInt(maxConcurrency, int(jt.QueuedJobs()))
+			var idp *index.Index
+			if hasIndex {
+				idp = &idx
+			}
+			for w := 1; w <= concurrency; w++ {
+				go workers.CreateObjectWorker(baseDir, jt, storage, idp)
+			}
+			jt.StartAndWait()
 		} else {
 			return err
 		}

@@ -182,10 +182,12 @@ func FetchGit(baseUrl, baseDir string) error {
 			}
 			jt.StartAndWait()
 
-			log.Info().Str("dir", baseDir).Msg("running git checkout .")
-			cmd := exec.Command("git", "checkout", ".")
-			cmd.Dir = baseDir
-			return cmd.Run()
+			if err := checkout(baseDir); err != nil {
+				log.Error().Str("dir", baseDir).Err(err).Msg("failed to checkout")
+			}
+			if err := fetchIgnored(baseDir, baseUrl); err != nil {
+				return err
+			}
 		}
 	}
 
@@ -331,15 +333,15 @@ func FetchGit(baseUrl, baseDir string) error {
 		}
 	}
 
-	storage := filesystem.NewObjectStorage(dotgit.New(osfs.New(utils.Url(baseDir, ".git"))), &cache.ObjectLRU{MaxSize: 256})
-	if err := storage.ForEachObjectHash(func(hash plumbing.Hash) error {
+	objStorage := filesystem.NewObjectStorage(dotgit.New(osfs.New(utils.Url(baseDir, ".git"))), &cache.ObjectLRU{MaxSize: 256})
+	if err := objStorage.ForEachObjectHash(func(hash plumbing.Hash) error {
 		objs[hash.String()] = true
-		encObj, err := storage.EncodedObject(plumbing.AnyObject, hash)
+		encObj, err := objStorage.EncodedObject(plumbing.AnyObject, hash)
 		if err != nil {
 			return err
 
 		}
-		decObj, err := object.DecodeObject(storage, encObj)
+		decObj, err := object.DecodeObject(objStorage, encObj)
 		if err != nil {
 			return err
 		}
@@ -361,7 +363,7 @@ func FetchGit(baseUrl, baseDir string) error {
 		jt.AddJob(obj)
 	}
 	for w := 1; w <= maxConcurrency; w++ {
-		go workers.FindObjectsWorker(c, baseUrl, baseDir, jt, storage)
+		go workers.FindObjectsWorker(c, baseUrl, baseDir, jt, objStorage)
 	}
 	jt.StartAndWait()
 
@@ -369,139 +371,101 @@ func FetchGit(baseUrl, baseDir string) error {
 		return nil
 	}
 
-	// TODO: try to do using go-git
-	log.Info().Str("dir", baseDir).Msg("running git checkout .")
-	cmd := exec.Command("git", "checkout", ".")
-	cmd.Dir = baseDir
-	//stderr := &bytes.Buffer{}
-	//cmd.Stderr = stderr
-	if err := cmd.Run(); err != nil {
-		if exErr, ok := err.(*exec.ExitError); ok && (exErr.ProcessState.ExitCode() == 255 || exErr.ProcessState.ExitCode() == 128) {
-			log.Info().Str("base", baseUrl).Str("dir", baseDir).Msg("attempting to fetch missing files")
-			/*out, err := ioutil.ReadAll(stderr)
-			if err != nil {
-				return err
-			}
-			var missingFiles []string
-			errors := stdErrRegex.FindAllSubmatch(out, -1)
-			jt = jobtracker.NewJobTracker()
-			for _, e := range errors {
-				if !bytes.HasSuffix(e[1], phpSuffix) {
-					missingFiles = append(missingFiles, string(e[1]))
-					jt.AddJob(string(e[1]))
-				}
-			}
-			concurrency := utils.MinInt(maxConcurrency, int(jt.QueuedJobs()))
-			for w := 1; w <= concurrency; w++ {
-				go workers.DownloadWorker(c, baseUrl, baseDir, jt, true, true)
-			}
-			jt.StartAndWait()
+	// Iterate over index to find missing files
+	if utils.Exists(indexPath) {
+		log.Info().Str("base", baseUrl).Str("dir", baseDir).Msg("attempting to fetch potentially missing files")
 
-			// Fetch files marked as missing in status
-			// TODO: why do we parse status AND decode index ???????
-			cmd := exec.Command("git", "status")
-			cmd.Dir = baseDir
-			stdout := &bytes.Buffer{}
-			cmd.Stdout = stdout
-			err = cmd.Run()
-			// ignore errors, this will likely error almost every time
-			if err == nil {
-				out, err = ioutil.ReadAll(stdout)
-				if err != nil {
-					return err
-				}
-				deleted := statusRegex.FindAllSubmatch(out, -1)
-				jt = jobtracker.NewJobTracker()
-				for _, e := range deleted {
-					if !bytes.HasSuffix(e[1], phpSuffix) {
-						jt.AddJob(string(e[1]))
-					}
-				}
-				concurrency = utils.MinInt(maxConcurrency, int(jt.QueuedJobs()))
-				for w := 1; w <= concurrency; w++ {
-					go workers.DownloadWorker(c, baseUrl, baseDir, jt, true, true)
-				}
-				jt.Wait()
-			}*/
-
-			// Iterate over index to find missing files
-			if utils.Exists(indexPath) {
-				var missingFiles []string
-				var idx index.Index
-				f, err := os.Open(indexPath)
-				if err != nil {
-					return err
-				}
-				defer f.Close()
-				decoder := index.NewDecoder(f)
-				if err := decoder.Decode(&idx); err != nil {
-					log.Error().Err(err).Msg("failed to decode index")
-					//return err
-				} else {
-					jt = jobtracker.NewJobTracker()
-					for _, entry := range idx.Entries {
-						if !strings.HasSuffix(entry.Name, ".php") && !utils.Exists(utils.Url(baseDir, entry.Name)) {
-							missingFiles = append(missingFiles, entry.Name)
-							jt.AddJob(entry.Name)
-						}
-					}
-					concurrency = utils.MinInt(maxConcurrency, int(jt.QueuedJobs()))
-					for w := 1; w <= concurrency; w++ {
-						go workers.DownloadWorker(c, baseUrl, baseDir, jt, true, true)
-					}
-					jt.StartAndWait()
-
-					//
-					jt = jobtracker.NewJobTracker()
-					for _, f := range missingFiles {
-						if utils.Exists(utils.Url(baseDir, f)) {
-							jt.AddJob(f)
-						}
-					}
-					concurrency = utils.MinInt(maxConcurrency, int(jt.QueuedJobs()))
-					for w := 1; w <= concurrency; w++ {
-						go workers.CreateObjectWorker(baseDir, jt, storage, &idx)
-					}
-					jt.StartAndWait()
-				}
-			}
-		} else {
+		var missingFiles []string
+		var idx index.Index
+		f, err := os.Open(indexPath)
+		if err != nil {
 			return err
 		}
-
-		ignorePath := utils.Url(baseDir, ".gitignore")
-		if utils.Exists(ignorePath) {
-			log.Info().Str("base", baseDir).Msg("atempting to fetch ignored files")
-
-			ignoreFile, err := os.Open(ignorePath)
-			if err != nil {
-				return err
-			}
-			defer ignoreFile.Close()
-
+		defer f.Close()
+		decoder := index.NewDecoder(f)
+		if err := decoder.Decode(&idx); err != nil {
+			log.Error().Str("dir", baseDir).Err(err).Msg("couldn't decode git index")
+			//return err
+		} else {
 			jt = jobtracker.NewJobTracker()
-
-			scanner := bufio.NewScanner(ignoreFile)
-			for scanner.Scan() {
-				line := strings.TrimSpace(scanner.Text())
-				commentStrip := strings.SplitN(line, "#", 1)
-				line = commentStrip[0]
-				if line == "" || strings.HasPrefix(line, "!") || strings.HasSuffix(line, "/") || strings.ContainsRune(line, '*') || strings.HasSuffix(line, ".php") {
-					continue
+			for _, entry := range idx.Entries {
+				if !strings.HasSuffix(entry.Name, ".php") && !utils.Exists(utils.Url(baseDir, fmt.Sprintf(".git/objects/%s/%s", entry.Hash.String()[:2], entry.Hash.String()[2:]))) {
+					missingFiles = append(missingFiles, entry.Name)
+					jt.AddJob(entry.Name)
 				}
-				jt.AddJob(line)
 			}
-
-			if err := scanner.Err(); err != nil {
-				return err
-			}
-
 			concurrency = utils.MinInt(maxConcurrency, int(jt.QueuedJobs()))
 			for w := 1; w <= concurrency; w++ {
 				go workers.DownloadWorker(c, baseUrl, baseDir, jt, true, true)
 			}
 			jt.StartAndWait()
+
+			//
+			jt = jobtracker.NewJobTracker()
+			for _, f := range missingFiles {
+				if utils.Exists(utils.Url(baseDir, f)) {
+					jt.AddJob(f)
+				}
+			}
+			concurrency = utils.MinInt(maxConcurrency, int(jt.QueuedJobs()))
+			for w := 1; w <= concurrency; w++ {
+				go workers.CreateObjectWorker(baseDir, jt, objStorage, &idx)
+			}
+			jt.StartAndWait()
 		}
+	}
+
+	if err := checkout(baseDir); err != nil {
+		log.Error().Str("dir", baseDir).Err(err).Msg("failed to checkout")
+	}
+
+	if err := fetchIgnored(baseDir, baseUrl); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func checkout(baseDir string) error {
+	log.Info().Str("dir", baseDir).Msg("running git checkout .")
+	cmd := exec.Command("git", "checkout", ".")
+	cmd.Dir = baseDir
+	return cmd.Run()
+}
+
+func fetchIgnored(baseDir, baseUrl string) error {
+	ignorePath := utils.Url(baseDir, ".gitignore")
+	if utils.Exists(ignorePath) {
+		log.Info().Str("base", baseDir).Msg("atempting to fetch ignored files")
+
+		ignoreFile, err := os.Open(ignorePath)
+		if err != nil {
+			return err
+		}
+		defer ignoreFile.Close()
+
+		jt := jobtracker.NewJobTracker()
+
+		scanner := bufio.NewScanner(ignoreFile)
+		for scanner.Scan() {
+			line := strings.TrimSpace(scanner.Text())
+			commentStrip := strings.SplitN(line, "#", 1)
+			line = commentStrip[0]
+			if line == "" || strings.HasPrefix(line, "!") || strings.HasSuffix(line, "/") || strings.ContainsRune(line, '*') || strings.HasSuffix(line, ".php") {
+				continue
+			}
+			jt.AddJob(line)
+		}
+
+		if err := scanner.Err(); err != nil {
+			return err
+		}
+
+		concurrency := utils.MinInt(maxConcurrency, int(jt.QueuedJobs()))
+		for w := 1; w <= concurrency; w++ {
+			go workers.DownloadWorker(c, baseUrl, baseDir, jt, true, true)
+		}
+		jt.StartAndWait()
 	}
 	return nil
 }

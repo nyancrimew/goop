@@ -453,26 +453,43 @@ func FetchGit(baseUrl, baseDir string) error {
 
 			// TODO: turn into worker?
 			for _, f := range missingFiles {
-				if utils.Exists(utils.Url(baseDir, f)) {
-					cmd := exec.Command("git", "hash-object", "-w", f)
-					cmd.Dir = baseDir
-					cmd.Stdout = nil
-					cmd.Stderr = nil
-					if err := cmd.Run(); err != nil {
-						log.Error().Str("file", f).Err(err).Msg("failed to hash object")
+				fp := utils.Url(baseDir, f)
+				if utils.Exists(fp) {
+					content, err := ioutil.ReadFile(fp)
+					if err != nil {
+						log.Error().Str("file", f).Err(err).Msg("failed to read file")
 						continue
 					}
-					log.Info().Str("file", f).Msg("hashed and stored object")
+
+					obj := storage.NewEncodedObject()
+					obj.SetSize(int64(len(content)))
+					obj.SetType(plumbing.BlobObject)
+
+					ow, err := obj.Writer()
+					if err != nil {
+						log.Error().Str("file", f).Err(err).Msg("failed to create object writer")
+						continue
+					}
+
+					ow.Write(content)
+					ow.Close()
+
+					_, err = storage.SetEncodedObject(obj)
+					if err != nil {
+						log.Error().Str("file", f).Err(err).Msg("failed to create object")
+						continue
+					}
+					log.Info().Str("file", f).Msg("object created")
 
 					cmd = exec.Command("git", "checkout", f)
 					cmd.Dir = baseDir
 					cmd.Stdout = nil
 					cmd.Stderr = nil
 					if err := cmd.Run(); err != nil {
-						log.Error().Str("file", f).Err(err).Msg("failed to checkout file")
+						log.Error().Str("file", f).Err(err).Msg("failed to checkout")
 						continue
 					}
-					log.Info().Str("file", f).Msg("checked out file")
+					log.Info().Str("file", f).Msg("checked out")
 				}
 			}
 		} else {

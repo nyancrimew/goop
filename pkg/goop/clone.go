@@ -374,9 +374,13 @@ func FetchGit(baseUrl, baseDir string) error {
 
 	fetchMissing(baseDir, baseUrl, objStorage)
 
+	// TODO: disable lfs in checkout (for now lfs support depends on lfs NOT being setup on the system you use goop on)
 	if err := checkout(baseDir); err != nil {
 		log.Error().Str("dir", baseDir).Err(err).Msg("failed to checkout")
 	}
+
+	// <fetch lfs objects and manually check them out>
+	fetchLfs(baseDir, baseUrl)
 
 	if err := fetchIgnored(baseDir, baseUrl); err != nil {
 		return err
@@ -390,6 +394,106 @@ func checkout(baseDir string) error {
 	cmd := exec.Command("git", "checkout", ".")
 	cmd.Dir = baseDir
 	return cmd.Run()
+}
+
+func fetchLfs(baseDir, baseUrl string) {
+	attrPath := utils.Url(baseDir, ".gitattributes")
+	if utils.Exists(attrPath) {
+		log.Info().Str("dir", baseDir).Msg("attempting to fetch potential git lfs objects")
+		f, err := os.Open(attrPath)
+		if err != nil {
+			log.Error().Str("dir", baseDir).Err(err).Msg("couldn't read git attributes")
+			return
+		}
+		defer f.Close()
+
+		var globalFilters []string
+		var filters []string
+		var files []string
+		scanner := bufio.NewScanner(f)
+		for scanner.Scan() {
+			line := strings.TrimSpace(scanner.Text())
+			if strings.Contains(line, "filter=lfs") {
+				pattern := strings.SplitN(line, " ", 2)[0]
+				if strings.ContainsRune(pattern, '*') {
+					if strings.ContainsRune(pattern, '/') {
+						globalFilters = append(globalFilters, pattern)
+					} else {
+						filters = append(filters, pattern)
+					}
+				} else {
+					files = append(files, pattern)
+				}
+			}
+		}
+		if err := scanner.Err(); err != nil {
+			log.Error().Str("dir", baseDir).Err(err).Msg("error while parsing git attributes file")
+		}
+
+		var hashes []string
+		readStub := func(fp string) {
+			f, err := os.Open(fp)
+			if err != nil {
+				log.Error().Str("file", fp).Err(err).Msg("couldn't open lfs stub file")
+				return
+			}
+			defer f.Close()
+			scanner := bufio.NewScanner(f)
+			for scanner.Scan() {
+				line := strings.TrimSpace(scanner.Text())
+				fmt.Println(line)
+				if strings.HasPrefix(line, "oid ") {
+					hash := strings.SplitN(line, " ", 2)[1]
+					hash = strings.SplitN(hash, ":", 2)[1]
+					hashes = append(hashes, hash)
+					break
+				}
+			}
+			if err := scanner.Err(); err != nil {
+				log.Error().Str("file", fp).Err(err).Msg("error while parsing lfs stub file")
+			}
+		}
+
+		for _, file := range files {
+			fp := utils.Url(baseDir, file)
+			if utils.Exists(fp) {
+				readStub(fp)
+			}
+		}
+
+		err = filepath.Walk(baseDir,
+			func(path string, info os.FileInfo, err error) error {
+				if err != nil {
+					return err
+				}
+				for _, filter := range filters {
+					match, err := filepath.Match(filter, filepath.Base(path))
+					if err != nil {
+						log.Error().Str("dir", baseDir).Str("filter", filter).Err(err).Msg("failed to apply filter")
+						continue
+					}
+					if match {
+						readStub(path)
+					}
+				}
+				return nil
+			})
+		if err != nil {
+			log.Error().Str("dir", baseDir).Err(err).Msg("error while testing git lfs filters")
+		}
+
+		// TODO: global filters
+
+		jt := jobtracker.NewJobTracker()
+		for _, hash := range hashes {
+			jt.AddJob(fmt.Sprintf(".git/lfs/objects/%s/%s/%s", hash[:2], hash[2:4], hash))
+		}
+		concurrency := utils.MinInt(maxConcurrency, int(jt.QueuedJobs()))
+		for w := 1; w <= concurrency; w++ {
+			go workers.DownloadWorker(c, baseUrl, baseDir, jt, false, false)
+		}
+		jt.StartAndWait()
+	}
 }
 
 // Iterate over index to find missing files

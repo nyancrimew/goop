@@ -4,8 +4,8 @@ import (
 	"io/ioutil"
 	"os"
 
-	"github.com/deletescape/goop/internal/jobtracker"
 	"github.com/deletescape/goop/internal/utils"
+	"github.com/deletescape/jobtracker"
 	"github.com/phuslu/log"
 	"github.com/valyala/fasthttp"
 )

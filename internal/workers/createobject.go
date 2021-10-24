@@ -4,8 +4,8 @@ import (
 	"io/ioutil"
 	"os"
 
-	"github.com/deletescape/goop/internal/jobtracker"
 	"github.com/deletescape/goop/internal/utils"
+	"github.com/deletescape/jobtracker"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/format/index"
 	"github.com/go-git/go-git/v5/storage/filesystem"

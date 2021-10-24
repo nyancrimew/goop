@@ -4,6 +4,7 @@ go 1.14
 
 require (
 	github.com/PuerkitoBio/goquery v1.6.0
+	github.com/deletescape/jobtracker v0.0.0-20211024172446-273a3d20c697
 	github.com/go-git/go-billy/v5 v5.0.0
 	github.com/go-git/go-git/v5 v5.2.0
 	github.com/phuslu/log v1.0.75

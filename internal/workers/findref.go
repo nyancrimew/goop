@@ -21,23 +21,14 @@ var branchRegex = regexp.MustCompile(`(?m)branch ["'](.+)["']`)
 var checkedRefs = make(map[string]bool)
 var checkedRefsMutex sync.Mutex
 
-func FindRefWorker(c *fasthttp.Client, baseUrl, baseDir string, jt *jobtracker.JobTracker) {
-	for {
-		select {
-		case path := <-jt.Queue:
-			findRefWork(c, baseUrl, baseDir, path, jt)
-		default:
-			if !jt.HasWork() {
-				return
-			}
-			jt.Nap()
-		}
-	}
+type FindRefContext struct {
+	C       *fasthttp.Client
+	BaseUrl string
+	BaseDir string
 }
 
-func findRefWork(c *fasthttp.Client, baseUrl, baseDir, path string, jt *jobtracker.JobTracker) {
-	jt.StartWork()
-	defer jt.EndWork()
+func FindRefWorker(jt *jobtracker.JobTracker, path string, context jobtracker.Context) {
+	c := context.(FindRefContext)
 
 	checkRatelimted()
 
@@ -51,7 +42,7 @@ func findRefWork(c *fasthttp.Client, baseUrl, baseDir, path string, jt *jobtrack
 	}
 	checkedRefsMutex.Unlock()
 
-	targetFile := utils.Url(baseDir, path)
+	targetFile := utils.Url(c.BaseDir, path)
 	if utils.Exists(targetFile) {
 		log.Info().Str("file", targetFile).Msg("already fetched, skipping redownload")
 		content, err := ioutil.ReadFile(targetFile)
@@ -90,8 +81,8 @@ func findRefWork(c *fasthttp.Client, baseUrl, baseDir, path string, jt *jobtrack
 		return
 	}
 
-	uri := utils.Url(baseUrl, path)
-	code, body, err := c.Get(nil, uri)
+	uri := utils.Url(c.BaseUrl, path)
+	code, body, err := c.C.Get(nil, uri)
 	if err == nil && code != 200 {
 		if code == 429 {
 			setRatelimited()

@@ -12,36 +12,25 @@ import (
 	"github.com/valyala/fasthttp"
 )
 
-func RecursiveDownloadWorker(c *fasthttp.Client, baseUrl, baseDir string, jt *jobtracker.JobTracker) {
-	for {
-		select {
-		case f, ok := <-jt.Queue:
-			if ok {
-				recursiveDownload(c, baseUrl, baseDir, f, jt)
-			}
-		default:
-			if !jt.HasWork() {
-				return
-			}
-			jt.Nap()
-		}
-	}
+type RecursiveDownloadContext struct {
+	C       *fasthttp.Client
+	BaseUrl string
+	BaseDir string
 }
 
-func recursiveDownload(c *fasthttp.Client, baseUrl, baseDir, f string, jt *jobtracker.JobTracker) {
-	jt.StartWork()
-	defer jt.EndWork()
+func RecursiveDownloadWorker(jt *jobtracker.JobTracker, f string, context jobtracker.Context) {
+	c := context.(RecursiveDownloadContext)
 
 	checkRatelimted()
 
-	filePath := utils.Url(baseDir, f)
+	filePath := utils.Url(c.BaseDir, f)
 	isDir := strings.HasSuffix(f, "/")
 	if !isDir && utils.Exists(filePath) {
 		log.Info().Str("file", filePath).Msg("already fetched, skipping redownload")
 		return
 	}
-	uri := utils.Url(baseUrl, f)
-	code, body, err := c.Get(nil, uri)
+	uri := utils.Url(c.BaseUrl, f)
+	code, body, err := c.C.Get(nil, uri)
 	if err == nil && code != 200 {
 		if code == 429 {
 			setRatelimited()

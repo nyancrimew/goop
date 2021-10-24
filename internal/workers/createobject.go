@@ -12,27 +12,18 @@ import (
 	"github.com/phuslu/log"
 )
 
-func CreateObjectWorker(baseDir string, jt *jobtracker.JobTracker, storage *filesystem.ObjectStorage, index *index.Index) {
-	for {
-		select {
-		case file := <-jt.Queue:
-			createObjWork(baseDir, file, jt, storage, index)
-		default:
-			if !jt.HasWork() {
-				return
-			}
-			jt.Nap()
-		}
-	}
+type CreateObjectContext struct {
+	BaseDir string
+	Storage *filesystem.ObjectStorage
+	Index   *index.Index
 }
 
-func createObjWork(baseDir, f string, jt *jobtracker.JobTracker, storage *filesystem.ObjectStorage, idx *index.Index) {
-	jt.StartWork()
-	defer jt.EndWork()
+func CreateObjectWorker(jt *jobtracker.JobTracker, f string, context jobtracker.Context) {
+	c := context.(CreateObjectContext)
 
-	fp := utils.Url(baseDir, f)
+	fp := utils.Url(c.BaseDir, f)
 
-	entry, err := idx.Entry(f)
+	entry, err := c.Index.Entry(f)
 	if err != nil {
 		log.Error().Str("file", f).Err(err).Msg("file is not in index")
 		return
@@ -60,7 +51,7 @@ func createObjWork(baseDir, f string, jt *jobtracker.JobTracker, storage *filesy
 		return
 	}
 
-	obj := storage.NewEncodedObject()
+	obj := c.Storage.NewEncodedObject()
 	obj.SetSize(int64(len(content)))
 	obj.SetType(plumbing.BlobObject)
 
@@ -72,7 +63,7 @@ func createObjWork(baseDir, f string, jt *jobtracker.JobTracker, storage *filesy
 	defer ow.Close()
 	ow.Write(content)
 
-	_, err = storage.SetEncodedObject(obj)
+	_, err = c.Storage.SetEncodedObject(obj)
 	if err != nil {
 		log.Error().Str("file", f).Err(err).Msg("failed to create object")
 		return

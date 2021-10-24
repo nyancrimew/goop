@@ -18,23 +18,15 @@ import (
 var checkedObjs = make(map[string]bool)
 var checkedObjsMutex sync.Mutex
 
-func FindObjectsWorker(c *fasthttp.Client, baseUrl, baseDir string, jt *jobtracker.JobTracker, storage *filesystem.ObjectStorage) {
-	for {
-		select {
-		case obj := <-jt.Queue:
-			findObjWork(c, baseUrl, baseDir, obj, jt, storage)
-		default:
-			if !jt.HasWork() {
-				return
-			}
-			jt.Nap()
-		}
-	}
+type FindObjectsContext struct {
+	C       *fasthttp.Client
+	BaseUrl string
+	BaseDir string
+	Storage *filesystem.ObjectStorage
 }
 
-func findObjWork(c *fasthttp.Client, baseUrl, baseDir, obj string, jt *jobtracker.JobTracker, storage *filesystem.ObjectStorage) {
-	jt.StartWork()
-	defer jt.EndWork()
+func FindObjectsWorker(jt *jobtracker.JobTracker, obj string, context jobtracker.Context) {
+	c := context.(FindObjectsContext)
 
 	checkRatelimted()
 
@@ -53,15 +45,15 @@ func findObjWork(c *fasthttp.Client, baseUrl, baseDir, obj string, jt *jobtracke
 	checkedObjsMutex.Unlock()
 
 	file := fmt.Sprintf(".git/objects/%s/%s", obj[:2], obj[2:])
-	fullPath := utils.Url(baseDir, file)
+	fullPath := utils.Url(c.BaseDir, file)
 	if utils.Exists(fullPath) {
 		log.Info().Str("obj", obj).Msg("already fetched, skipping redownload")
-		encObj, err := storage.EncodedObject(plumbing.AnyObject, plumbing.NewHash(obj))
+		encObj, err := c.Storage.EncodedObject(plumbing.AnyObject, plumbing.NewHash(obj))
 		if err != nil {
 			log.Error().Str("obj", obj).Err(err).Msg("couldn't read object")
 			return
 		}
-		decObj, err := object.DecodeObject(storage, encObj)
+		decObj, err := object.DecodeObject(c.Storage, encObj)
 		if err != nil {
 			log.Error().Str("obj", obj).Err(err).Msg("couldn't decode object")
 			return
@@ -73,8 +65,8 @@ func findObjWork(c *fasthttp.Client, baseUrl, baseDir, obj string, jt *jobtracke
 		return
 	}
 
-	uri := utils.Url(baseUrl, file)
-	code, body, err := c.Get(nil, uri)
+	uri := utils.Url(c.BaseUrl, file)
+	code, body, err := c.C.Get(nil, uri)
 	if err == nil && code != 200 {
 		if code == 429 {
 			setRatelimited()
@@ -107,12 +99,12 @@ func findObjWork(c *fasthttp.Client, baseUrl, baseDir, obj string, jt *jobtracke
 
 	log.Info().Str("obj", obj).Msg("fetched object")
 
-	encObj, err := storage.EncodedObject(plumbing.AnyObject, plumbing.NewHash(obj))
+	encObj, err := c.Storage.EncodedObject(plumbing.AnyObject, plumbing.NewHash(obj))
 	if err != nil {
 		log.Error().Str("obj", obj).Err(err).Msg("couldn't read object")
 		return
 	}
-	decObj, err := object.DecodeObject(storage, encObj)
+	decObj, err := object.DecodeObject(c.Storage, encObj)
 	if err != nil {
 		log.Error().Str("obj", obj).Err(err).Msg("couldn't decode object")
 		return

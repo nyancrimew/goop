@@ -10,33 +10,25 @@ import (
 	"github.com/valyala/fasthttp"
 )
 
-func DownloadWorker(c *fasthttp.Client, baseUrl, baseDir string, jt *jobtracker.JobTracker, allowHtml, allowEmpty bool) {
-	for {
-		select {
-		case file := <-jt.Queue:
-			downloadWork(c, baseUrl, baseDir, file, jt, allowHtml, allowEmpty)
-		default:
-			if !jt.HasWork() {
-				return
-			}
-			jt.Nap()
-		}
-	}
+type DownloadContext struct {
+	C           *fasthttp.Client
+	BaseUrl     string
+	BaseDir     string
+	AllowHtml   bool
+	AlllowEmpty bool
 }
 
-func downloadWork(c *fasthttp.Client, baseUrl, baseDir, file string, jt *jobtracker.JobTracker, allowHtml, allowEmpty bool) {
-	jt.StartWork()
-	defer jt.EndWork()
-
+func DownloadWorker(jt *jobtracker.JobTracker, file string, context jobtracker.Context) {
+	c := context.(DownloadContext)
 	checkRatelimted()
 
-	targetFile := utils.Url(baseDir, file)
+	targetFile := utils.Url(c.BaseDir, file)
 	if utils.Exists(targetFile) {
 		log.Info().Str("file", targetFile).Msg("already fetched, skipping redownload")
 		return
 	}
-	uri := utils.Url(baseUrl, file)
-	code, body, err := c.Get(nil, uri)
+	uri := utils.Url(c.BaseUrl, file)
+	code, body, err := c.C.Get(nil, uri)
 	if err == nil && code != 200 {
 		if code == 429 {
 			setRatelimited()
@@ -50,11 +42,11 @@ func downloadWork(c *fasthttp.Client, baseUrl, baseDir, file string, jt *jobtrac
 		return
 	}
 
-	if !allowHtml && utils.IsHtml(body) {
+	if !c.AllowHtml && utils.IsHtml(body) {
 		log.Warn().Str("uri", uri).Msg("file appears to be html, skipping")
 		return
 	}
-	if !allowEmpty && utils.IsEmptyBytes(body) {
+	if !c.AlllowEmpty && utils.IsEmptyBytes(body) {
 		log.Warn().Str("uri", uri).Msg("file appears to be empty, skipping")
 		return
 	}

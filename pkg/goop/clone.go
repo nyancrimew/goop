@@ -172,15 +172,9 @@ func FetchGit(baseUrl, baseDir string) error {
 		}
 		if utils.StringsContain(indexedFiles, "HEAD") {
 			log.Info().Str("base", baseUrl).Msg("fetching .git/ recursively")
-			jt := jobtracker.NewJobTracker()
-			for _, f := range indexedFiles {
-				// TODO: add support for non top level git repos
-				jt.AddJob(utils.Url(".git", f))
-			}
-			for w := 1; w <= maxConcurrency; w++ {
-				go workers.RecursiveDownloadWorker(c, baseUrl, baseDir, jt)
-			}
-			jt.StartAndWait()
+			jt := jobtracker.NewJobTracker(workers.RecursiveDownloadWorker, maxConcurrency, jobtracker.DefaultNapper)
+			jt.AddJobs(indexedFiles...)
+			jt.StartAndWait(&workers.RecursiveDownloadContext{C: c, BaseUrl: baseUrl, BaseDir: baseDir})
 
 			if err := checkout(baseDir); err != nil {
 				log.Error().Str("dir", baseDir).Err(err).Msg("failed to checkout")
@@ -192,25 +186,14 @@ func FetchGit(baseUrl, baseDir string) error {
 	}
 
 	log.Info().Str("base", baseUrl).Msg("fetching common files")
-	jt := jobtracker.NewJobTracker()
-	for _, f := range commonFiles {
-		jt.AddJob(f)
-	}
-	concurrency := utils.MinInt(maxConcurrency, len(commonFiles))
-	for w := 1; w <= concurrency; w++ {
-		go workers.DownloadWorker(c, baseUrl, baseDir, jt, false, false)
-	}
-	jt.StartAndWait()
+	jt := jobtracker.NewJobTracker(workers.DownloadWorker, maxConcurrency, jobtracker.DefaultNapper)
+	jt.AddJobs(commonFiles...)
+	jt.StartAndWait(workers.DownloadContext{C: c, BaseDir: baseDir, BaseUrl: baseUrl})
 
-	jt = jobtracker.NewJobTracker()
 	log.Info().Str("base", baseUrl).Msg("finding refs")
-	for _, ref := range commonRefs {
-		jt.AddJob(ref)
-	}
-	for w := 1; w <= maxConcurrency; w++ {
-		go workers.FindRefWorker(c, baseUrl, baseDir, jt)
-	}
-	jt.StartAndWait()
+	jt = jobtracker.NewJobTracker(workers.FindRefWorker, maxConcurrency, jobtracker.DefaultNapper)
+	jt.AddJobs(commonRefs...)
+	jt.StartAndWait(workers.FindRefContext{C: c, BaseUrl: baseUrl, BaseDir: baseDir})
 
 	log.Info().Str("base", baseUrl).Msg("finding packs")
 	infoPacksPath := utils.Url(baseDir, ".git/objects/info/packs")
@@ -220,16 +203,12 @@ func FetchGit(baseUrl, baseDir string) error {
 			return err
 		}
 		hashes := packRegex.FindAllSubmatch(infoPacks, -1)
-		jt = jobtracker.NewJobTracker()
+		jt = jobtracker.NewJobTracker(workers.DownloadWorker, maxConcurrency, jobtracker.DefaultNapper)
 		for _, sha1 := range hashes {
 			jt.AddJob(fmt.Sprintf(".git/objects/pack/pack-%s.idx", sha1[1]))
 			jt.AddJob(fmt.Sprintf(".git/objects/pack/pack-%s.pack", sha1[1]))
 		}
-		concurrency := utils.MinInt(maxConcurrency, int(jt.QueuedJobs()))
-		for w := 1; w <= concurrency; w++ {
-			go workers.DownloadWorker(c, baseUrl, baseDir, jt, false, false)
-		}
-		jt.StartAndWait()
+		jt.StartAndWait(workers.DownloadContext{C: c, BaseUrl: baseUrl, BaseDir: baseDir})
 	}
 
 	log.Info().Str("base", baseUrl).Msg("finding objects")
@@ -357,15 +336,12 @@ func FetchGit(baseUrl, baseDir string) error {
 		storage.IterEncodedObjects()
 	}*/
 
-	jt = jobtracker.NewJobTracker()
 	log.Info().Str("base", baseUrl).Msg("fetching object")
+	jt = jobtracker.NewJobTracker(workers.FindObjectsWorker, maxConcurrency, jobtracker.DefaultNapper)
 	for obj := range objs {
 		jt.AddJob(obj)
 	}
-	for w := 1; w <= maxConcurrency; w++ {
-		go workers.FindObjectsWorker(c, baseUrl, baseDir, jt, objStorage)
-	}
-	jt.StartAndWait()
+	jt.StartAndWait(workers.FindObjectsContext{C: c, BaseUrl: baseUrl, BaseDir: baseDir, Storage: objStorage})
 
 	// exit early if we haven't managed to dump anything
 	if !utils.Exists(baseDir) {
@@ -484,15 +460,11 @@ func fetchLfs(baseDir, baseUrl string) {
 
 		// TODO: global filters
 
-		jt := jobtracker.NewJobTracker()
+		jt := jobtracker.NewJobTracker(workers.DownloadWorker, maxConcurrency, jobtracker.DefaultNapper)
 		for _, hash := range hashes {
 			jt.AddJob(fmt.Sprintf(".git/lfs/objects/%s/%s/%s", hash[:2], hash[2:4], hash))
 		}
-		concurrency := utils.MinInt(maxConcurrency, int(jt.QueuedJobs()))
-		for w := 1; w <= concurrency; w++ {
-			go workers.DownloadWorker(c, baseUrl, baseDir, jt, false, false)
-		}
-		jt.StartAndWait()
+		jt.StartAndWait(workers.DownloadContext{C: c, BaseUrl: baseUrl, BaseDir: baseDir})
 	}
 }
 
@@ -515,30 +487,22 @@ func fetchMissing(baseDir, baseUrl string, objStorage *filesystem.ObjectStorage)
 			log.Error().Str("dir", baseDir).Err(err).Msg("couldn't decode git index")
 			return
 		} else {
-			jt := jobtracker.NewJobTracker()
+			jt := jobtracker.NewJobTracker(workers.DownloadWorker, maxConcurrency, jobtracker.DefaultNapper)
 			for _, entry := range idx.Entries {
 				if !strings.HasSuffix(entry.Name, ".php") && !utils.Exists(utils.Url(baseDir, fmt.Sprintf(".git/objects/%s/%s", entry.Hash.String()[:2], entry.Hash.String()[2:]))) {
 					missingFiles = append(missingFiles, entry.Name)
 					jt.AddJob(entry.Name)
 				}
 			}
-			concurrency := utils.MinInt(maxConcurrency, int(jt.QueuedJobs()))
-			for w := 1; w <= concurrency; w++ {
-				go workers.DownloadWorker(c, baseUrl, baseDir, jt, true, true)
-			}
-			jt.StartAndWait()
+			jt.StartAndWait(workers.DownloadContext{C: c, BaseUrl: baseUrl, BaseDir: baseDir, AllowHtml: true, AlllowEmpty: true})
 
-			jt = jobtracker.NewJobTracker()
+			jt = jobtracker.NewJobTracker(workers.CreateObjectWorker, maxConcurrency, jobtracker.DefaultNapper)
 			for _, f := range missingFiles {
 				if utils.Exists(utils.Url(baseDir, f)) {
 					jt.AddJob(f)
 				}
 			}
-			concurrency = utils.MinInt(maxConcurrency, int(jt.QueuedJobs()))
-			for w := 1; w <= concurrency; w++ {
-				go workers.CreateObjectWorker(baseDir, jt, objStorage, &idx)
-			}
-			jt.StartAndWait()
+			jt.StartAndWait(workers.CreateObjectContext{BaseDir: baseDir, Storage: objStorage, Index: &idx})
 		}
 	}
 }
@@ -554,7 +518,7 @@ func fetchIgnored(baseDir, baseUrl string) error {
 		}
 		defer ignoreFile.Close()
 
-		jt := jobtracker.NewJobTracker()
+		jt := jobtracker.NewJobTracker(workers.DownloadWorker, maxConcurrency, jobtracker.DefaultNapper)
 
 		scanner := bufio.NewScanner(ignoreFile)
 		for scanner.Scan() {
@@ -571,11 +535,7 @@ func fetchIgnored(baseDir, baseUrl string) error {
 			return err
 		}
 
-		concurrency := utils.MinInt(maxConcurrency, int(jt.QueuedJobs()))
-		for w := 1; w <= concurrency; w++ {
-			go workers.DownloadWorker(c, baseUrl, baseDir, jt, true, true)
-		}
-		jt.StartAndWait()
+		jt.StartAndWait(workers.DownloadContext{C: c, BaseUrl: baseUrl, BaseDir: baseDir, AllowHtml: true, AlllowEmpty: true})
 	}
 	return nil
 }

@@ -174,7 +174,7 @@ func FetchGit(baseUrl, baseDir string) error {
 			log.Info().Str("base", baseUrl).Msg("fetching .git/ recursively")
 			jt := jobtracker.NewJobTracker(workers.RecursiveDownloadWorker, maxConcurrency, jobtracker.DefaultNapper)
 			jt.AddJobs(indexedFiles...)
-			jt.StartAndWait(&workers.RecursiveDownloadContext{C: c, BaseUrl: baseUrl, BaseDir: baseDir})
+			jt.StartAndWait(&workers.RecursiveDownloadContext{C: c, BaseUrl: baseUrl, BaseDir: baseDir}, true)
 
 			if err := checkout(baseDir); err != nil {
 				log.Error().Str("dir", baseDir).Err(err).Msg("failed to checkout")
@@ -188,12 +188,12 @@ func FetchGit(baseUrl, baseDir string) error {
 	log.Info().Str("base", baseUrl).Msg("fetching common files")
 	jt := jobtracker.NewJobTracker(workers.DownloadWorker, maxConcurrency, jobtracker.DefaultNapper)
 	jt.AddJobs(commonFiles...)
-	jt.StartAndWait(workers.DownloadContext{C: c, BaseDir: baseDir, BaseUrl: baseUrl})
+	jt.StartAndWait(workers.DownloadContext{C: c, BaseDir: baseDir, BaseUrl: baseUrl}, false)
 
 	log.Info().Str("base", baseUrl).Msg("finding refs")
 	jt = jobtracker.NewJobTracker(workers.FindRefWorker, maxConcurrency, jobtracker.DefaultNapper)
 	jt.AddJobs(commonRefs...)
-	jt.StartAndWait(workers.FindRefContext{C: c, BaseUrl: baseUrl, BaseDir: baseDir})
+	jt.StartAndWait(workers.FindRefContext{C: c, BaseUrl: baseUrl, BaseDir: baseDir}, true)
 
 	log.Info().Str("base", baseUrl).Msg("finding packs")
 	infoPacksPath := utils.Url(baseDir, ".git/objects/info/packs")
@@ -208,7 +208,7 @@ func FetchGit(baseUrl, baseDir string) error {
 			jt.AddJob(fmt.Sprintf(".git/objects/pack/pack-%s.idx", sha1[1]))
 			jt.AddJob(fmt.Sprintf(".git/objects/pack/pack-%s.pack", sha1[1]))
 		}
-		jt.StartAndWait(workers.DownloadContext{C: c, BaseUrl: baseUrl, BaseDir: baseDir})
+		jt.StartAndWait(workers.DownloadContext{C: c, BaseUrl: baseUrl, BaseDir: baseDir}, false)
 	}
 
 	log.Info().Str("base", baseUrl).Msg("finding objects")
@@ -341,7 +341,7 @@ func FetchGit(baseUrl, baseDir string) error {
 	for obj := range objs {
 		jt.AddJob(obj)
 	}
-	jt.StartAndWait(workers.FindObjectsContext{C: c, BaseUrl: baseUrl, BaseDir: baseDir, Storage: objStorage})
+	jt.StartAndWait(workers.FindObjectsContext{C: c, BaseUrl: baseUrl, BaseDir: baseDir, Storage: objStorage}, true)
 
 	// exit early if we haven't managed to dump anything
 	if !utils.Exists(baseDir) {
@@ -464,7 +464,7 @@ func fetchLfs(baseDir, baseUrl string) {
 		for _, hash := range hashes {
 			jt.AddJob(fmt.Sprintf(".git/lfs/objects/%s/%s/%s", hash[:2], hash[2:4], hash))
 		}
-		jt.StartAndWait(workers.DownloadContext{C: c, BaseUrl: baseUrl, BaseDir: baseDir})
+		jt.StartAndWait(workers.DownloadContext{C: c, BaseUrl: baseUrl, BaseDir: baseDir}, false)
 	}
 }
 
@@ -494,7 +494,7 @@ func fetchMissing(baseDir, baseUrl string, objStorage *filesystem.ObjectStorage)
 					jt.AddJob(entry.Name)
 				}
 			}
-			jt.StartAndWait(workers.DownloadContext{C: c, BaseUrl: baseUrl, BaseDir: baseDir, AllowHtml: true, AlllowEmpty: true})
+			jt.StartAndWait(workers.DownloadContext{C: c, BaseUrl: baseUrl, BaseDir: baseDir, AllowHtml: true, AlllowEmpty: true}, false)
 
 			jt = jobtracker.NewJobTracker(workers.CreateObjectWorker, maxConcurrency, jobtracker.DefaultNapper)
 			for _, f := range missingFiles {
@@ -502,7 +502,7 @@ func fetchMissing(baseDir, baseUrl string, objStorage *filesystem.ObjectStorage)
 					jt.AddJob(f)
 				}
 			}
-			jt.StartAndWait(workers.CreateObjectContext{BaseDir: baseDir, Storage: objStorage, Index: &idx})
+			jt.StartAndWait(workers.CreateObjectContext{BaseDir: baseDir, Storage: objStorage, Index: &idx}, false)
 		}
 	}
 }
@@ -535,7 +535,7 @@ func fetchIgnored(baseDir, baseUrl string) error {
 			return err
 		}
 
-		jt.StartAndWait(workers.DownloadContext{C: c, BaseUrl: baseUrl, BaseDir: baseDir, AllowHtml: true, AlllowEmpty: true})
+		jt.StartAndWait(workers.DownloadContext{C: c, BaseUrl: baseUrl, BaseDir: baseDir, AllowHtml: true, AlllowEmpty: true}, false)
 	}
 	return nil
 }

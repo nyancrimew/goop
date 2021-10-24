@@ -2,7 +2,7 @@ package goop
 
 import "regexp"
 
-const maxConcurrency = 60
+const maxConcurrency = 40
 
 var refPrefix = []byte{'r', 'e', 'f', ':'}
 var (

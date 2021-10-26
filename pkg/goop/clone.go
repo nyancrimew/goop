@@ -343,10 +343,6 @@ func FetchGit(baseUrl, baseDir string) error {
 	}); err != nil {
 		log.Error().Str("dir", baseDir).Err(err).Msg("error while processing object files")
 	}
-	// TODO: find more objects to fetch in pack files and remove packed objects from list of objects to be fetched
-	/*for _, pack := range storage.ObjectPacks() {
-		storage.IterEncodedObjects()
-	}*/
 
 	// Parse stand alone commit graph file
 	parseGraphFile(baseDir, utils.Url(baseDir, ".git/objects/info/commit-graph"), objs)
@@ -375,6 +371,28 @@ func FetchGit(baseUrl, baseDir string) error {
 			parseGraphFile(baseDir, utils.Url(baseDir, graphFile), objs)
 		}
 	}
+
+	// TODO: find more objects to fetch in pack files and remove packed objects from list of objects to be fetched
+	/* packs, err := objStorage.ObjectPacks()
+	// TODO: handle error
+	if err == nil {
+		for _, pack := range packs {
+			pf := utils.Url(baseDir, fmt.Sprintf(".git/objects/pack/pack-%s.pack", pack))
+			r, err := os.Open(pf)
+			if err != nil {
+				log.Error().Str("dir", baseDir).Str("pack", pf).Err(err).Msg("failed to open pack file")
+				continue
+			}
+			sc := packfile.NewScanner(r)
+			for {
+				oh, err := sc.NextObjectHeader()
+				if err != nil {
+					log.Error().Str("dir", baseDir).Str("pack", pf).Err(err).Msg("error while parsing pack file")
+					break
+				}
+			}
+		}
+	} */
 
 	log.Info().Str("base", baseUrl).Msg("fetching objects")
 	jt = jobtracker.NewJobTracker(workers.FindObjectsWorker, maxConcurrency, jobtracker.DefaultNapper)

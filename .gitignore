@@ -20,3 +20,5 @@
 .idea
 *.iml
 
+# local notes
+notes.txt

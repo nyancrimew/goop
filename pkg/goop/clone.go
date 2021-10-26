@@ -205,8 +205,11 @@ func FetchGit(baseUrl, baseDir string) error {
 		hashes := packRegex.FindAllSubmatch(infoPacks, -1)
 		jt = jobtracker.NewJobTracker(workers.DownloadWorker, maxConcurrency, jobtracker.DefaultNapper)
 		for _, sha1 := range hashes {
-			jt.AddJob(fmt.Sprintf(".git/objects/pack/pack-%s.idx", sha1[1]))
-			jt.AddJob(fmt.Sprintf(".git/objects/pack/pack-%s.pack", sha1[1]))
+			jt.AddJobs(
+				fmt.Sprintf(".git/objects/pack/pack-%s.idx", sha1[1]),
+				fmt.Sprintf(".git/objects/pack/pack-%s.pack", sha1[1]),
+				fmt.Sprintf(".git/objects/pack/pack-%s.rev", sha1[1]),
+			)
 		}
 		jt.StartAndWait(workers.DownloadContext{C: c, BaseUrl: baseUrl, BaseDir: baseDir}, false)
 	}

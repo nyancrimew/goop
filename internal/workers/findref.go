@@ -61,7 +61,7 @@ func FindRefWorker(jt *jobtracker.JobTracker, path string, context jobtracker.Co
 				jt.AddJob(fmt.Sprintf(".git/logs/refs/remotes/origin/%s", branch[1]))
 			}
 		}
-		if path == ".git/config" {
+		if path == ".git/config" || path == ".git/config.worktree" {
 			cfg, err := ini.Load(content)
 			if err != nil {
 				log.Error().Str("file", targetFile).Err(err).Msg("failed to parse git config")
@@ -126,7 +126,7 @@ func FindRefWorker(jt *jobtracker.JobTracker, path string, context jobtracker.Co
 			jt.AddJob(fmt.Sprintf(".git/logs/refs/remotes/origin/%s", branch[1]))
 		}
 	}
-	if path == ".git/config" {
+	if path == ".git/config" || path == ".git/config.worktree" {
 		cfg, err := ini.Load(body)
 		if err != nil {
 			log.Error().Str("file", targetFile).Err(err).Msg("failed to parse git config")

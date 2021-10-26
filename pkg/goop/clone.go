@@ -354,6 +354,8 @@ func FetchGit(baseUrl, baseDir string) error {
 	// Parse commit graph chains
 	commitGraphList := utils.Url(baseDir, ".git/objects/info/commit-graphs/commit-graph-chain")
 	if utils.Exists(commitGraphList) {
+		var graphFiles []string
+		jt = jobtracker.NewJobTracker(workers.DownloadWorker, maxConcurrency, jobtracker.DefaultNapper)
 		f, err := os.Open(commitGraphList)
 		if err != nil {
 			log.Error().Str("dir", baseDir).Err(err).Msg("failed to open commit graph chain")
@@ -362,9 +364,15 @@ func FetchGit(baseUrl, baseDir string) error {
 			for scanner.Scan() {
 				line := strings.TrimSpace(scanner.Text())
 				if !strings.HasPrefix(line, "#") {
-					parseGraphFile(baseDir, utils.Url(baseDir, fmt.Sprintf(".git/objects/info/commit-graphs/graph-%s.graph", line)), objs)
+					graphFile := fmt.Sprintf(".git/objects/info/commit-graphs/graph-%s.graph", line)
+					graphFiles = append(graphFiles, graphFile)
+					jt.AddJob(graphFile)
 				}
 			}
+		}
+		jt.StartAndWait(workers.DownloadContext{C: c, BaseDir: baseDir, BaseUrl: baseUrl}, false)
+		for _, graphFile := range graphFiles {
+			parseGraphFile(baseDir, utils.Url(baseDir, graphFile), objs)
 		}
 	}
 

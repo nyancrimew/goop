@@ -19,6 +19,7 @@ import (
 	"github.com/go-git/go-billy/v5/osfs"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/cache"
+	"github.com/go-git/go-git/v5/plumbing/format/commitgraph"
 	"github.com/go-git/go-git/v5/plumbing/format/index"
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/go-git/go-git/v5/storage/filesystem"
@@ -232,6 +233,8 @@ func FetchGit(baseUrl, baseDir string) error {
 		utils.Url(baseDir, ".git/objects/info/http-alternates"),
 	}
 
+	// TODO : fix if-else hell in the entire object hash collection code (and get rid of bad early returns)
+
 	gitRefsDir := utils.Url(baseDir, ".git/refs")
 	if utils.Exists(gitRefsDir) {
 		if err := filepath.Walk(gitRefsDir, func(path string, info os.FileInfo, err error) error {
@@ -345,7 +348,25 @@ func FetchGit(baseUrl, baseDir string) error {
 		storage.IterEncodedObjects()
 	}*/
 
-	// TODO: grab object hashes from commit graphs
+	// Parse stand alone commit graph file
+	parseGraphFile(baseDir, utils.Url(baseDir, ".git/objects/info/commit-graph"), objs)
+
+	// Parse commit graph chains
+	commitGraphList := utils.Url(baseDir, ".git/objects/info/commit-graphs/commit-graph-chain")
+	if utils.Exists(commitGraphList) {
+		f, err := os.Open(commitGraphList)
+		if err != nil {
+			log.Error().Str("dir", baseDir).Err(err).Msg("failed to open commit graph chain")
+		} else {
+			scanner := bufio.NewScanner(f)
+			for scanner.Scan() {
+				line := strings.TrimSpace(scanner.Text())
+				if !strings.HasPrefix(line, "#") {
+					parseGraphFile(baseDir, utils.Url(baseDir, fmt.Sprintf(".git/objects/info/commit-graphs/graph-%s.graph", line)), objs)
+				}
+			}
+		}
+	}
 
 	log.Info().Str("base", baseUrl).Msg("fetching objects")
 	jt = jobtracker.NewJobTracker(workers.FindObjectsWorker, maxConcurrency, jobtracker.DefaultNapper)
@@ -549,4 +570,35 @@ func fetchIgnored(baseDir, baseUrl string) error {
 		jt.StartAndWait(workers.DownloadContext{C: c, BaseUrl: baseUrl, BaseDir: baseDir, AllowHtml: true, AlllowEmpty: true}, false)
 	}
 	return nil
+}
+
+func parseGraphFile(baseDir, graphFile string, objs map[string]bool) {
+	if utils.Exists(graphFile) {
+		f, err := os.Open(graphFile)
+		if err != nil {
+			log.Error().Str("dir", baseDir).Str("graph", graphFile).Err(err).Msg("failed to open commit graph")
+			return
+		}
+		graph, err := commitgraph.OpenFileIndex(f)
+		if err != nil {
+			log.Error().Str("dir", baseDir).Str("graph", graphFile).Err(err).Msg("failed to decode commit graph")
+			return
+		}
+		for _, hash := range graph.Hashes() {
+			objs[hash.String()] = true
+			i, err := graph.GetIndexByHash(hash)
+			if err != nil {
+				log.Error().Str("dir", baseDir).Str("graph", graphFile).Str("commit", hash.String()).Err(err).Msg("failed get index from graph")
+				continue
+			}
+			data, err := graph.GetCommitDataByIndex(i)
+			if err != nil {
+				log.Error().Str("dir", baseDir).Str("graph", graphFile).Str("commit", hash.String()).Err(err).Msg("failed get commit data from graph")
+				continue
+			}
+			objs[data.TreeHash.String()] = true
+
+		}
+	}
+
 }

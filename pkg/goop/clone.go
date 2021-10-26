@@ -221,9 +221,15 @@ func FetchGit(baseUrl, baseDir string) error {
 	files := []string{
 		utils.Url(baseDir, ".git/packed-refs"),
 		utils.Url(baseDir, ".git/info/refs"),
+		utils.Url(baseDir, ".git/info/grafts"),
+		// utils.Url(baseDir, ".git/info/sparse-checkout"), // TODO: ?
 		utils.Url(baseDir, ".git/FETCH_HEAD"),
 		utils.Url(baseDir, ".git/ORIG_HEAD"),
 		utils.Url(baseDir, ".git/HEAD"),
+		utils.Url(baseDir, ".git/objects/loose-object-idx"), // TODO: is this even a text file?
+		utils.Url(baseDir, ".git/objects/info/commit-graphs/commit-graph-chain"),
+		utils.Url(baseDir, ".git/objects/info/alternates"),
+		utils.Url(baseDir, ".git/objects/info/http-alternates"),
 	}
 
 	gitRefsDir := utils.Url(baseDir, ".git/refs")
@@ -339,7 +345,9 @@ func FetchGit(baseUrl, baseDir string) error {
 		storage.IterEncodedObjects()
 	}*/
 
-	log.Info().Str("base", baseUrl).Msg("fetching object")
+	// TODO: grab object hashes from commit graphs
+
+	log.Info().Str("base", baseUrl).Msg("fetching objects")
 	jt = jobtracker.NewJobTracker(workers.FindObjectsWorker, maxConcurrency, jobtracker.DefaultNapper)
 	for obj := range objs {
 		jt.AddJob(obj)

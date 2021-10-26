@@ -7,14 +7,14 @@ const maxConcurrency = 40
 var refPrefix = []byte{'r', 'e', 'f', ':'}
 var (
 	packRegex   = regexp.MustCompile(`(?m)pack-([a-f0-9]{40})\.pack`)
-	objRegex    = regexp.MustCompile(`(?m)(^|\s)([a-f0-9]{40})($|\s)`)
+	objRegex    = regexp.MustCompile(`(?m)(^|\s)([a-f0-9]{40})($|\s)`) // TODO: add sha256 support
 	refLogRegex = regexp.MustCompile(`(?m)^(?:[a-f0-9]{40}) ([a-f0-9]{40}) .*$`)
 )
 var (
 	commonFiles = []string{
 		".gitignore",
 		".gitattributes",
-		".gitmodules",
+		".gitmodules", // TODO: fetch submodules
 		".env",
 		".git/COMMIT_EDITMSG",
 		".git/description",
@@ -43,7 +43,7 @@ var (
 		".git/info/attributes",                               // TODO: can lfs filters be in here?
 		".git/info/sparse-checkout",                          // TODO: parse and process
 		".git/objects/loose-object-idx",                      // TODO: parse and process
-		".git/objects/pack/multi-pack-index",                 // TODO: parse and process
+		".git/objects/pack/multi-pack-index",                 // TODO: parse and process and fetch referenced packs (unless i'm missunderstanding this)
 	}
 	commonRefs = []string{
 		".git/FETCH_HEAD",

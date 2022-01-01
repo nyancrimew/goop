@@ -175,7 +175,7 @@ func FetchGit(baseUrl, baseDir string) error {
 			log.Info().Str("base", baseUrl).Msg("fetching .git/ recursively")
 			jt := jobtracker.NewJobTracker(workers.RecursiveDownloadWorker, maxConcurrency, jobtracker.DefaultNapper)
 			jt.AddJobs(indexedFiles...)
-			jt.StartAndWait(&workers.RecursiveDownloadContext{C: c, BaseUrl: baseUrl, BaseDir: baseDir}, true)
+			jt.StartAndWait(workers.RecursiveDownloadContext{C: c, BaseUrl: baseUrl, BaseDir: baseDir}, true)
 
 			if err := checkout(baseDir); err != nil {
 				log.Error().Str("dir", baseDir).Err(err).Msg("failed to checkout")

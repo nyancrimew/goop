@@ -19,7 +19,10 @@ func Exists(name string) bool {
 	if err == nil {
 		return true
 	}
-	if os.IsNotExist(err){
+	if os.IsNotExist(err) {
+		return false
+	}
+	if i == nil {
 		return false
 	}
 	return i.IsDir()

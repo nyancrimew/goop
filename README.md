@@ -22,7 +22,7 @@ $ goop example.com
 ## Installation
 
 ```bash
-go get -u github.com/deletescape/goop@latest
+go install github.com/deletescape/goop@latest
 ```
 
 ## How does it work?

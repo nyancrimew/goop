@@ -583,7 +583,7 @@ func fetchIgnored(baseDir, baseUrl string) error {
 			line := strings.TrimSpace(scanner.Text())
 			commentStrip := strings.SplitN(line, "#", 1)
 			line = commentStrip[0]
-			if line == "" || strings.HasPrefix(line, "!") || strings.HasSuffix(line, "/") || strings.ContainsRune(line, '*') || strings.HasSuffix(line, ".php") {
+			if line == "" || strings.HasPrefix(line, "!") || strings.HasSuffix(line, "/") || strings.ContainsRune(line, '*') || strings.HasSuffix(line, ".php") || strings.HasPrefix(line, "#") {
 				continue
 			}
 			jt.AddJob(line)

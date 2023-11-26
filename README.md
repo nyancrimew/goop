@@ -25,6 +25,12 @@ $ goop example.com
 go install github.com/deletescape/goop@latest
 ```
 
+On BlackArch Linux:
+
+```bash
+pacman -S goop-dump
+```
+
 ## How does it work?
 
 The tool will first check if directory listing is available. If it is, then it will just recursively download the .git directory (what you would do with `wget`).

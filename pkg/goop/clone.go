@@ -8,7 +8,6 @@ import (
 	"io/ioutil"
 	"net/url"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -17,6 +16,7 @@ import (
 	"github.com/deletescape/goop/internal/workers"
 	"github.com/deletescape/jobtracker"
 	"github.com/go-git/go-billy/v5/osfs"
+	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/cache"
 	"github.com/go-git/go-git/v5/plumbing/format/commitgraph"
@@ -425,9 +425,23 @@ func FetchGit(baseUrl, baseDir string) error {
 
 func checkout(baseDir string) error {
 	log.Info().Str("dir", baseDir).Msg("running git checkout .")
-	cmd := exec.Command("git", "checkout", ".")
-	cmd.Dir = baseDir
-	return cmd.Run()
+
+	log.Info().Str("dir", baseDir).Msg("opening the current repository")
+
+	repo, err := git.PlainOpen(baseDir)
+	if err != nil {
+		return err
+	}
+
+	log.Info().Str("dir", baseDir).Msg("switching to repo worktree")
+
+	worktree, err := repo.Worktree()
+	if err != nil {
+		return err
+	}
+
+	log.Info().Str("dir", baseDir).Msg("checking out current worktree")
+	return worktree.Checkout(&git.CheckoutOptions{})
 }
 
 func fetchLfs(baseDir, baseUrl string) {

@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -92,14 +93,14 @@ func CloneList(listFile, baseDir string, force, keep bool) error {
 			dir = utils.Url(dir, parsed.Host)
 		}
 		log.Info().Str("target", u).Str("dir", dir).Bool("force", force).Bool("keep", keep).Msg("starting download")
-		if err := Clone(u, dir, force, keep); err != nil {
+		if err := Clone(u, dir, force, keep, 0); err != nil {
 			log.Error().Str("target", u).Str("dir", dir).Bool("force", force).Bool("keep", keep).Msg("download failed")
 		}
 	}
 	return nil
 }
 
-func Clone(u, dir string, force, keep bool) error {
+func Clone(u, dir string, force, keep bool, port int64) error {
 	baseUrl := strings.TrimSuffix(u, "/")
 	baseUrl = strings.TrimSuffix(baseUrl, "/HEAD")
 	baseUrl = strings.TrimSuffix(baseUrl, "/.git")
@@ -110,6 +111,15 @@ func Clone(u, dir string, force, keep bool) error {
 	if parsed.Scheme == "" {
 		parsed.Scheme = "http"
 	}
+	baseUrl = parsed.String()
+	parsed, err = url.Parse(baseUrl)
+	if err != nil {
+		return err
+	}
+	if parsed.Port() == "" && port > 0 {
+		parsed.Host += ":" + strconv.FormatInt(port, 10)
+	}
+	//Parse again to update with the port
 	baseUrl = parsed.String()
 	parsed, err = url.Parse(baseUrl)
 	if err != nil {

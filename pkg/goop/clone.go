@@ -595,6 +595,37 @@ func fetchIgnored(baseDir, baseUrl string) error {
 
 		jt.StartAndWait(workers.DownloadContext{C: c, BaseUrl: baseUrl, BaseDir: baseDir, AllowHtml: true, AlllowEmpty: true}, false)
 	}
+
+	excludePath := utils.Url(baseDir, ".git/info/exclude")
+	if utils.Exists(excludePath) {
+		log.Info().Str("base", baseDir).Msg("atempting to fetch ignored files from info/exclude")
+
+		excludeFile, err := os.Open(excludePath)
+		if err != nil {
+			return err
+		}
+		defer excludeFile.Close()
+
+		jt := jobtracker.NewJobTracker(workers.DownloadWorker, maxConcurrency, jobtracker.DefaultNapper)
+
+		scanner := bufio.NewScanner(excludeFile)
+		for scanner.Scan() {
+			line := strings.TrimSpace(scanner.Text())
+			commentStrip := strings.SplitN(line, "#", 1)
+			line = commentStrip[0]
+			if line == "" || strings.HasPrefix(line, "!") || strings.HasSuffix(line, "/") || strings.ContainsRune(line, '*') || strings.HasSuffix(line, ".php") || strings.HasPrefix(line, "#") {
+				continue
+			}
+			jt.AddJob(line)
+		}
+
+		if err := scanner.Err(); err != nil {
+			return err
+		}
+
+		jt.StartAndWait(workers.DownloadContext{C: c, BaseUrl: baseUrl, BaseDir: baseDir, AllowHtml: true, AlllowEmpty: true}, false)
+	}
+
 	return nil
 }
 

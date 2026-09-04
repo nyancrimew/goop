@@ -1,7 +1,6 @@
 package workers
 
 import (
-	"io/ioutil"
 	"os"
 
 	"github.com/deletescape/goop/internal/utils"
@@ -11,11 +10,11 @@ import (
 )
 
 type DownloadContext struct {
-	C           *fasthttp.Client
-	BaseUrl     string
-	BaseDir     string
-	AllowHtml   bool
-	AlllowEmpty bool
+	C          *fasthttp.Client
+	BaseUrl    string
+	BaseDir    string
+	AllowHtml  bool
+	AllowEmpty bool
 }
 
 func DownloadWorker(jt *jobtracker.JobTracker, file string, context jobtracker.Context) {
@@ -46,7 +45,7 @@ func DownloadWorker(jt *jobtracker.JobTracker, file string, context jobtracker.C
 		log.Warn().Str("uri", uri).Msg("file appears to be html, skipping")
 		return
 	}
-	if !c.AlllowEmpty && utils.IsEmptyBytes(body) {
+	if !c.AllowEmpty && utils.IsEmptyBytes(body) {
 		log.Warn().Str("uri", uri).Msg("file appears to be empty, skipping")
 		return
 	}
@@ -54,7 +53,7 @@ func DownloadWorker(jt *jobtracker.JobTracker, file string, context jobtracker.C
 		log.Error().Str("uri", uri).Str("file", targetFile).Err(err).Msg("couldn't create parent directories")
 		return
 	}
-	if err := ioutil.WriteFile(targetFile, body, os.ModePerm); err != nil {
+	if err := os.WriteFile(targetFile, body, os.ModePerm); err != nil {
 		log.Error().Str("uri", uri).Str("file", targetFile).Err(err).Msg("clouldn't write file")
 		return
 	}

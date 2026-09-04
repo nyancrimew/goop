@@ -4,11 +4,12 @@ import "regexp"
 
 const maxConcurrency = 40
 
-var refPrefix = []byte{'r', 'e', 'f', ':'}
+const refPrefix = "ref:"
+
 var (
 	packRegex   = regexp.MustCompile(`(?m)pack-([a-f0-9]{40})\.pack`)
 	objRegex    = regexp.MustCompile(`(?m)(^|\s)([a-f0-9]{40})($|\s)`) // TODO: add sha256 support
-	refLogRegex = regexp.MustCompile(`(?m)^(?:[a-f0-9]{40}) ([a-f0-9]{40}) .*$`)
+	refLogRegex = regexp.MustCompile(`(?m)^[a-f0-9]{40} ([a-f0-9]{40}) .*$`)
 )
 var (
 	commonFiles = []string{

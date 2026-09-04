@@ -2,7 +2,6 @@ package workers
 
 import (
 	"fmt"
-	"io/ioutil"
 	"os"
 	"regexp"
 	"strings"
@@ -15,7 +14,7 @@ import (
 	"gopkg.in/ini.v1"
 )
 
-var refRegex = regexp.MustCompile(`(?m)(refs(/[a-zA-Z0-9\-\.\_\*]+)+)`)
+var refRegex = regexp.MustCompile(`(?m)(refs(/[a-zA-Z0-9\-._*]+)+)`)
 var branchRegex = regexp.MustCompile(`(?m)branch ["'](.+)["']`)
 
 var checkedRefs = make(map[string]bool)
@@ -37,9 +36,9 @@ func FindRefWorker(jt *jobtracker.JobTracker, path string, context jobtracker.Co
 		// Ref has already been checked
 		checkedRefsMutex.Unlock()
 		return
-	} else {
-		checkedRefs[path] = true
 	}
+
+	checkedRefs[path] = true
 	checkedRefsMutex.Unlock()
 
 	targetFile := utils.Url(c.BaseDir, path)
@@ -48,7 +47,7 @@ func FindRefWorker(jt *jobtracker.JobTracker, path string, context jobtracker.Co
 	}
 	if utils.Exists(targetFile) {
 		log.Info().Str("file", targetFile).Msg("already fetched, skipping redownload")
-		content, err := ioutil.ReadFile(targetFile)
+		content, err := os.ReadFile(targetFile)
 		if err != nil {
 			log.Error().Str("file", targetFile).Err(err).Msg("error while reading file")
 			return
@@ -111,7 +110,7 @@ func FindRefWorker(jt *jobtracker.JobTracker, path string, context jobtracker.Co
 		log.Error().Str("uri", uri).Str("file", targetFile).Err(err).Msg("couldn't create parent directories")
 		return
 	}
-	if err := ioutil.WriteFile(targetFile, body, os.ModePerm); err != nil {
+	if err := os.WriteFile(targetFile, body, os.ModePerm); err != nil {
 		log.Error().Str("uri", uri).Str("file", targetFile).Err(err).Msg("clouldn't write file")
 		return
 	}

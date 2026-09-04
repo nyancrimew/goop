@@ -5,11 +5,11 @@ import (
 	"bytes"
 	"crypto/tls"
 	"fmt"
-	"io/ioutil"
 	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -151,7 +151,7 @@ func FetchGit(baseUrl, baseDir string) error {
 
 	if code != 200 {
 		log.Warn().Str("base", baseUrl).Int("code", code).Msg(".git/HEAD doesn't appear to exist, clone will most likely fail")
-	} else if !bytes.HasPrefix(body, refPrefix) {
+	} else if !bytes.HasPrefix(body, []byte(refPrefix)) {
 		log.Warn().Str("base", baseUrl).Int("code", code).Msg(".git/HEAD doesn't appear to be a git HEAD file, clone will most likely fail")
 	}
 
@@ -171,7 +171,7 @@ func FetchGit(baseUrl, baseDir string) error {
 		if err != nil {
 			return err
 		}
-		if utils.StringsContain(indexedFiles, "HEAD") {
+		if slices.Contains(indexedFiles, "HEAD") {
 			log.Info().Str("base", baseUrl).Msg("fetching .git/ recursively")
 			jt := jobtracker.NewJobTracker(workers.RecursiveDownloadWorker, maxConcurrency, jobtracker.DefaultNapper)
 			jt.AddJobs(indexedFiles...)
@@ -199,7 +199,7 @@ func FetchGit(baseUrl, baseDir string) error {
 	log.Info().Str("base", baseUrl).Msg("finding packs")
 	infoPacksPath := utils.Url(baseDir, ".git/objects/info/packs")
 	if utils.Exists(infoPacksPath) {
-		infoPacks, err := ioutil.ReadFile(infoPacksPath)
+		infoPacks, err := os.ReadFile(infoPacksPath)
 		if err != nil {
 			return err
 		}
@@ -265,7 +265,7 @@ func FetchGit(baseUrl, baseDir string) error {
 					if !utils.Exists(filePath) {
 						log.Info().Str("dir", baseDir).Str("ref", refName).Msg("generating ref file")
 
-						content, err := ioutil.ReadFile(path)
+						content, err := os.ReadFile(path)
 						if err != nil {
 							log.Error().Str("dir", baseDir).Str("ref", refName).Err(err).Msg("couldn't read reflog file")
 							return nil
@@ -284,7 +284,7 @@ func FetchGit(baseUrl, baseDir string) error {
 							return nil
 						}
 
-						if err := ioutil.WriteFile(filePath, lastEntryObj, os.ModePerm); err != nil {
+						if err := os.WriteFile(filePath, lastEntryObj, os.ModePerm); err != nil {
 							log.Error().Str("file", filePath).Err(err).Msg("couldn't write to file")
 						}
 					}
@@ -300,7 +300,7 @@ func FetchGit(baseUrl, baseDir string) error {
 			continue
 		}
 
-		content, err := ioutil.ReadFile(f)
+		content, err := os.ReadFile(f)
 		if err != nil {
 			log.Error().Str("file", f).Err(err).Msg("couldn't read reflog file")
 			return err
@@ -558,7 +558,7 @@ func fetchMissing(baseDir, baseUrl string, objStorage *filesystem.ObjectStorage)
 					jt.AddJob(entry.Name)
 				}
 			}
-			jt.StartAndWait(workers.DownloadContext{C: c, BaseUrl: baseUrl, BaseDir: baseDir, AllowHtml: true, AlllowEmpty: true}, false)
+			jt.StartAndWait(workers.DownloadContext{C: c, BaseUrl: baseUrl, BaseDir: baseDir, AllowHtml: true, AllowEmpty: true}, false)
 
 			jt = jobtracker.NewJobTracker(workers.CreateObjectWorker, maxConcurrency, jobtracker.DefaultNapper)
 			for _, f := range missingFiles {
@@ -599,7 +599,7 @@ func fetchIgnored(baseDir, baseUrl string) error {
 			return err
 		}
 
-		jt.StartAndWait(workers.DownloadContext{C: c, BaseUrl: baseUrl, BaseDir: baseDir, AllowHtml: true, AlllowEmpty: true}, false)
+		jt.StartAndWait(workers.DownloadContext{C: c, BaseUrl: baseUrl, BaseDir: baseDir, AllowHtml: true, AllowEmpty: true}, false)
 	}
 	return nil
 }
@@ -611,6 +611,7 @@ func parseGraphFile(baseDir, graphFile string, objs map[string]bool) {
 			log.Error().Str("dir", baseDir).Str("graph", graphFile).Err(err).Msg("failed to open commit graph")
 			return
 		}
+		defer f.Close()
 		graph, err := commitgraph.OpenFileIndex(f)
 		if err != nil {
 			log.Error().Str("dir", baseDir).Str("graph", graphFile).Err(err).Msg("failed to decode commit graph")

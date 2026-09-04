@@ -8,10 +8,10 @@ import (
 	"github.com/PuerkitoBio/goquery"
 )
 
-var htmlTag = []byte{'<', 'h', 't', 'm', 'l'}
+const htmlTag = "<html"
 
 func IsHtml(body []byte) bool {
-	return bytes.Contains(body, htmlTag)
+	return bytes.Contains(body, []byte(htmlTag))
 }
 
 func GetIndexedFiles(body []byte, basePath string) ([]string, error) {

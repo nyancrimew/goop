@@ -2,7 +2,6 @@ package workers
 
 import (
 	"fmt"
-	"io/ioutil"
 	"os"
 	"sync"
 
@@ -39,9 +38,9 @@ func FindObjectsWorker(jt *jobtracker.JobTracker, obj string, context jobtracker
 		// Obj has already been checked
 		checkedObjsMutex.Unlock()
 		return
-	} else {
-		checkedObjs[obj] = true
 	}
+
+	checkedObjs[obj] = true
 	checkedObjsMutex.Unlock()
 
 	file := fmt.Sprintf(".git/objects/%s/%s", obj[:2], obj[2:])
@@ -92,7 +91,7 @@ func FindObjectsWorker(jt *jobtracker.JobTracker, obj string, context jobtracker
 		log.Error().Str("uri", uri).Str("file", fullPath).Err(err).Msg("couldn't create parent directories")
 		return
 	}
-	if err := ioutil.WriteFile(fullPath, body, os.ModePerm); err != nil {
+	if err := os.WriteFile(fullPath, body, os.ModePerm); err != nil {
 		log.Error().Str("uri", uri).Str("file", fullPath).Err(err).Msg("clouldn't write file")
 		return
 	}

@@ -58,18 +58,31 @@ func proxyFromEnv() fasthttp.DialFunc {
 	return nil
 }
 
-var c = &fasthttp.Client{
-	Name:            "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/85.0.4183.102 Safari/537.36",
-	MaxConnsPerHost: utils.MaxInt(maxConcurrency+250, fasthttp.DefaultMaxConnsPerHost),
-	TLSConfig: &tls.Config{
-		InsecureSkipVerify: true,
-	},
-	NoDefaultUserAgentHeader: true,
-	MaxConnWaitTimeout:       10 * time.Second,
-	Dial:                     proxyFromEnv(),
+var c *fasthttp.Client
+
+func CustomUE(useragent string) *fasthttp.Client {
+	if strings.Compare(useragent, "") != 0 {
+		c = &fasthttp.Client{
+			Name:            useragent,
+			MaxConnsPerHost: utils.MaxInt(maxConcurrency+250, fasthttp.DefaultMaxConnsPerHost),
+			TLSConfig: &tls.Config{
+				InsecureSkipVerify: true,
+			},
+			NoDefaultUserAgentHeader: true,
+			MaxConnWaitTimeout:       10 * time.Second,
+			Dial:                     proxyFromEnv(),
+		}
+	} else {
+		c.Name = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/85.0.4183.102 Safari/537.36"
+	}
+
+	return c
 }
 
-func CloneList(listFile, baseDir string, force, keep bool) error {
+func CloneList(listFile, baseDir string, force, keep bool, useragent string) error {
+	// Check for custom UserAgent
+	CustomUE(useragent)
+
 	lf, err := os.Open(listFile)
 	if err != nil {
 		return err
@@ -92,14 +105,17 @@ func CloneList(listFile, baseDir string, force, keep bool) error {
 			dir = utils.Url(dir, parsed.Host)
 		}
 		log.Info().Str("target", u).Str("dir", dir).Bool("force", force).Bool("keep", keep).Msg("starting download")
-		if err := Clone(u, dir, force, keep); err != nil {
-			log.Error().Str("target", u).Str("dir", dir).Bool("force", force).Bool("keep", keep).Msg("download failed")
+		if err := Clone(u, dir, force, keep, useragent); err != nil {
+			log.Error().Str("target", u).Str("dir", dir).Bool("force", force).Bool("keep", keep).Str("useragent", useragent).Msg("download failed")
 		}
 	}
 	return nil
 }
 
-func Clone(u, dir string, force, keep bool) error {
+func Clone(u, dir string, force, keep bool, useragent string) error {
+	// Check for custom UserAgent
+	CustomUE(useragent)
+
 	baseUrl := strings.TrimSuffix(u, "/")
 	baseUrl = strings.TrimSuffix(baseUrl, "/HEAD")
 	baseUrl = strings.TrimSuffix(baseUrl, "/.git")
